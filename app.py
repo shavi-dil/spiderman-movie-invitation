@@ -98,15 +98,9 @@ def render_name_entry_card() -> None:
             z-index: -1;
             pointer-events: none !important;
           }
-          .welcome-layout {
-            min-height: 100dvh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: clamp(12px, 3.5vw, 28px);
-          }
-          .welcome-frame {
-            width: min(560px, 100%);
+          .welcome-shell {
+            max-width: 560px;
+            margin: min(8vh, 72px) auto 0 auto;
             border-radius: 24px;
             border: 2px solid rgba(255, 255, 255, 0.16);
             background: linear-gradient(155deg, rgba(220, 47, 63, 0.18), rgba(20, 84, 216, 0.2), rgba(8, 12, 20, 0.92));
@@ -117,18 +111,6 @@ def render_name_entry_card() -> None:
             position: relative;
             pointer-events: auto !important;
             z-index: 20;
-          }
-          .welcome-frame h1 {
-            margin: 0 0 10px 0;
-            color: #fff4cc;
-            line-height: 1.25;
-            font-size: clamp(1.45rem, 4.8vw, 2.2rem);
-          }
-          .welcome-sub {
-            color: #dbe9ff;
-            font-weight: 700;
-            margin-bottom: 14px;
-            font-size: clamp(0.94rem, 2.8vw, 1.02rem);
           }
           @keyframes welcomeEnter {
             from {
@@ -157,11 +139,18 @@ def render_name_entry_card() -> None:
             right: 10px;
             transform: rotate(10deg);
           }
-          .welcome-form-host {
-            margin-top: 14px;
-            position: relative;
-            z-index: 20;
-            pointer-events: auto !important;
+          .welcome-shell h1 {
+            margin: 0 0 10px 0;
+            color: #fff4cc;
+            line-height: 1.25;
+            font-size: clamp(1.45rem, 4.8vw, 2.2rem);
+          }
+          .welcome-shell p {
+            color: #dbe9ff !important;
+            font-weight: 700;
+          }
+          .welcome-shell div[data-testid="stForm"] {
+            margin-top: 10px;
           }
           div[data-testid="stForm"] {
             position: relative;
@@ -218,8 +207,9 @@ def render_name_entry_card() -> None:
             filter: brightness(1.06);
           }
           @media (max-width: 640px) {
-            .welcome-frame {
+            .welcome-shell {
               padding: 16px;
+              margin-top: 24px;
             }
           }
         </style>
@@ -229,51 +219,41 @@ def render_name_entry_card() -> None:
         unsafe_allow_html=True,
     )
 
-    left, center, right = st.columns([1, 1.8, 1])
-    with center:
-        st.markdown(
-            """
-            <div class="welcome-layout">
-              <div class="welcome-frame">
-                <svg class="welcome-web wl" viewBox="0 0 100 100" aria-hidden="true"><path d="M50 5L50 95M5 50L95 50M18 18L82 82M82 18L18 82M10 35C32 44 68 44 90 35M10 65C32 56 68 56 90 65M35 10C44 32 44 68 35 90M65 10C56 32 56 68 65 90" stroke="#cfe7ff" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
-                <svg class="welcome-web wr" viewBox="0 0 100 100" aria-hidden="true"><path d="M50 5L50 95M5 50L95 50M18 18L82 82M82 18L18 82M10 35C32 44 68 44 90 35M10 65C32 56 68 56 90 65M35 10C44 32 44 68 35 90M65 10C56 32 56 68 65 90" stroke="#cfe7ff" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
-                <h1>Enter your name 🕷️</h1>
-                <div class="welcome-sub">Your spider mission starts here.</div>
-                <div class="welcome-form-host">
-            """,
-            unsafe_allow_html=True,
+    st.markdown(
+        """
+        <div class="welcome-shell">
+          <svg class="welcome-web wl" viewBox="0 0 100 100" aria-hidden="true"><path d="M50 5L50 95M5 50L95 50M18 18L82 82M82 18L18 82M10 35C32 44 68 44 90 35M10 65C32 56 68 56 90 65M35 10C44 32 44 68 35 90M65 10C56 32 56 68 65 90" stroke="#cfe7ff" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+          <svg class="welcome-web wr" viewBox="0 0 100 100" aria-hidden="true"><path d="M50 5L50 95M5 50L95 50M18 18L82 82M82 18L18 82M10 35C32 44 68 44 90 35M10 65C32 56 68 56 90 65M35 10C44 32 44 68 35 90M65 10C56 32 56 68 65 90" stroke="#cfe7ff" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.title("Enter your name 🕷️")
+    st.write("Your spider mission starts here.")
+
+    with st.form("name_form", clear_on_submit=False):
+        name = st.text_input(
+            "NAME",
+            placeholder="Type your name here...",
+            max_chars=40,
         )
 
-        with st.form("name_form", clear_on_submit=False):
-            visitor_name = st.text_input(
-                "NAME",
-                placeholder="Type your name here...",
-                key="name_input",
-                max_chars=40,
-            )
-            submitted = st.form_submit_button(
-                "Next 🕷️",
-                use_container_width=True,
-                key="next_button",
-            )
-
-        st.markdown(
-            """
-                </div>
-              </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
+        submitted = st.form_submit_button(
+            "Next 🕷️",
+            use_container_width=True,
         )
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
     if submitted:
-        clean_name = visitor_name.strip()
-        if not clean_name:
+        cleaned_name = name.strip()
+
+        if not cleaned_name:
             st.error("Please enter your name first 🕷️")
-            return
-        st.session_state.visitor_name = visitor_name.strip()
-        st.session_state.name_submitted = True
-        st.rerun()
+        else:
+            st.session_state.visitor_name = cleaned_name
+            st.session_state.name_submitted = True
+            st.rerun()
 
 
 def send_yes_email(visitor_name: str) -> bool:
@@ -1241,27 +1221,33 @@ def build_invitation_html(
 
 
 def main() -> None:
-    init_session_state()
-    inject_base_page_css()
+  init_session_state()
+  inject_base_page_css()
 
-    if not st.session_state.name_submitted:
-        render_name_entry_card()
-        return
+  if "name_submitted" not in st.session_state:
+    st.session_state.name_submitted = False
 
-    safe_name = html.escape(str(st.session_state.visitor_name), quote=True)
-    component_value = components.html(
-        build_invitation_html(
-            safe_visitor_name=safe_name,
-            response_submitted=bool(st.session_state.response_submitted),
-            submitted_answer=str(st.session_state.submitted_answer),
-            email_sent=bool(st.session_state.email_sent),
-            no_escape_count=int(st.session_state.no_escape_count),
-            yes_scale=float(st.session_state.yes_scale),
-        ),
-        height=960,
-        scrolling=False,
-    )
-    process_component_event(component_value)
+  if "visitor_name" not in st.session_state:
+    st.session_state.visitor_name = ""
+
+  if not st.session_state.name_submitted:
+    render_name_entry_card()
+    return
+
+  safe_name = html.escape(str(st.session_state.visitor_name), quote=True)
+  component_value = components.html(
+    build_invitation_html(
+      safe_visitor_name=safe_name,
+      response_submitted=bool(st.session_state.response_submitted),
+      submitted_answer=str(st.session_state.submitted_answer),
+      email_sent=bool(st.session_state.email_sent),
+      no_escape_count=int(st.session_state.no_escape_count),
+      yes_scale=float(st.session_state.yes_scale),
+    ),
+    height=960,
+    scrolling=False,
+  )
+  process_component_event(component_value)
 
 
 if __name__ == "__main__":
