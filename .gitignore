@@ -1,0 +1,11 @@
+# Python cache and virtual environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Streamlit local secrets (never commit real credentials)
+.streamlit/secrets.toml
+
+# macOS
+.DS_Store

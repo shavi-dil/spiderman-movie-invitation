@@ -1,102 +1,92 @@
-# Spider Movie Invite (Streamlit)
+# Spider-Man Movie Invitation (Streamlit)
 
-A responsive superhero-inspired invitation app built with Streamlit.
-It uses original visuals only (webs, spider icon, skyline, sparkles, speech bubble) and avoids copyrighted Marvel artwork or logos.
+This app is a responsive Spider-Man-inspired invitation built with Streamlit. It uses original visuals only (webs, sparkles, hearts, skyline silhouettes, comic bubbles, and spider animations) and does not use copyrighted Marvel or official movie assets.
 
-## Features
-
-- Invitation text:
-  - "Will you come with me to watch the Spider-Man movie on 31/07 evening? 🕷️❤️"
-- Fully responsive UI for phones, tablets, laptops, and desktops
-- Original red/blue/black/white comic theme
-- "Yes ❤️" and "No 🕸️" buttons, with a runaway/impossible-to-click "No" button
-- "Yes" celebration animations (confetti, floating hearts, swinging spider)
-- Success message:
-  - "YAY!! ❤️ See you at the movie! 🕷️🍿"
-- Secure Gmail SMTP email notifications for Yes responses using Streamlit secrets
-- Session-safe answer submission with duplicate prevention
-
-## Project Files
-
-- app.py
-- requirements.txt
-- README.md
-- .gitignore
-- .streamlit/config.toml
-- .streamlit/secrets.toml.example
-
-## 1) Run Locally
+## 1. Install dependencies
 
 1. Open a terminal in this project folder.
-2. Install dependencies:
+2. Install requirements:
 
-```bash
-pip install -r requirements.txt
-```
+  pip install -r requirements.txt
 
-3. Create your local secrets file:
+## 2. Run the app locally
 
-```bash
-mkdir -p .streamlit
-cp .streamlit/secrets.toml.example .streamlit/secrets.toml
-```
+1. Start Streamlit:
 
-4. Edit .streamlit/secrets.toml with your real values.
-5. Start the app:
+  streamlit run app.py
 
-```bash
-streamlit run app.py
-```
+2. Open the local URL shown in your terminal.
 
-## 2) Create a Gmail App Password
+## 3. Enable two-step verification on Google
 
-1. Sign in to your Google account.
-2. Enable 2-Step Verification.
-3. Go to Google Account -> Security -> App passwords.
-4. Create an app password (Mail).
-5. Copy the generated 16-character password.
+1. Sign in to the Google account you will use as the sender email.
+2. Open Google Account settings.
+3. Go to Security.
+4. Turn on 2-Step Verification.
 
-## 3) Local Secrets Format
+## 4. Create a Gmail App Password
 
-Use this format in .streamlit/secrets.toml and in Streamlit Cloud Secrets:
+1. Stay in Google Account Security settings.
+2. Open App passwords.
+3. Create an app password for Mail.
+4. Copy the generated 16-character password.
 
-```toml
-EMAIL_SENDER = "[yourgmail@gmail.com](mailto:yourgmail@gmail.com)"
-EMAIL_RECIPIENT = "[yournotificationemail@gmail.com](mailto:yournotificationemail@gmail.com)"
-EMAIL_APP_PASSWORD = "your-16-character-app-password"
-```
+## 5. Create local .streamlit/secrets.toml
 
-For real usage, replace those with actual email strings and your real app password.
+1. Make sure the .streamlit folder exists.
+2. Create a local file named .streamlit/secrets.toml.
+3. Add the following keys:
 
-## 4) Add Secrets in Streamlit Community Cloud
+  EMAIL_SENDER = "your-sender-gmail-address@gmail.com"
+  EMAIL_RECIPIENT = "shavinijoseph2004@gmail.com"
+  EMAIL_APP_PASSWORD = "your-16-character-gmail-app-password"
 
-1. Open your deployed app settings.
-2. Go to App Settings -> Secrets.
-3. Paste the same TOML keys from above using your real credentials.
-4. Save and restart the app if prompted.
+4. Save the file.
 
-## 5) Deploy to Streamlit Community Cloud
+## 6. Add secrets in Streamlit Community Cloud
 
-1. Push this project to a GitHub repository.
-2. Open Streamlit Community Cloud.
-3. Click New app.
-4. Select your repository, branch, and set main file path to app.py.
-5. Deploy.
+1. Open your app in Streamlit Community Cloud.
+2. Open Settings or the Secrets section.
+3. Paste the same three keys and values used locally.
+4. Save the secrets and restart the app if prompted.
 
-## 6) Test the Public Link on Mobile and Laptop
+## 7. Upload safely to GitHub
 
-1. Open the public URL on an iPhone or Android device (portrait mode first).
-2. Confirm no horizontal scrolling and that buttons are easy to tap.
-3. Rotate to landscape and verify layout still fits.
-4. Open the same URL on a laptop/desktop browser and confirm centered layout.
-5. Click "Yes ❤️" once and confirm:
-   - celebration animation appears
-   - both buttons become disabled
-   - email notification is received
+1. Confirm .streamlit/secrets.toml is ignored by git.
+2. Commit only source files, documentation, and .streamlit/secrets.toml.example.
+3. Push your repository to GitHub.
 
-## Security Notes
+## 8. Deploy on Streamlit Community Cloud
 
-- Do not commit .streamlit/secrets.toml.
-- .gitignore already excludes .streamlit/secrets.toml.
-- The app never displays credentials to recipients.
-- Email send failures are handled safely without crashing the UI.
+1. Open Streamlit Community Cloud.
+2. Click New app.
+3. Select your GitHub repository and branch.
+4. Set the main file path to app.py.
+5. Deploy and wait for the build to finish.
+6. Share the generated public app URL.
+
+## 9. Test on iPhone, Android, and laptop
+
+1. Open the public URL on an iPhone in portrait mode.
+2. Open the same URL on an Android phone in portrait mode.
+3. Rotate both phones and confirm layout still fits the viewport.
+4. Open the same URL on a laptop browser.
+5. Verify there is no horizontal scrolling and text stays readable.
+6. Verify the No button escapes quickly on both touch and mouse devices.
+7. Verify the Yes button grows smoothly after each No escape.
+
+## 10. Verify email notification delivery
+
+1. Enter a valid name and press Continue.
+2. Press Yes ❤️ once.
+3. Confirm the celebration screen appears.
+4. Check inbox for shavinijoseph2004@gmail.com.
+5. Verify subject is: Spider-Man invitation response: YES ❤️
+6. Verify the body includes name, answer YES, Australia/Melbourne timestamp, and source note.
+
+## Security checklist
+
+1. Never commit .streamlit/secrets.toml.
+2. Store sender credentials only in Streamlit secrets.
+3. Keep recipient fixed as shavinijoseph2004@gmail.com.
+4. Do not expose SMTP errors or credentials in visitor-facing messages.

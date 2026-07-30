@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import logging
 import smtplib
 from datetime import datetime
@@ -13,60 +14,212 @@ st.set_page_config(page_title="Spider Invite", page_icon="🕷️", layout="wide
 
 LOGGER = logging.getLogger("spider_invite")
 MELBOURNE_TZ = ZoneInfo("Australia/Melbourne")
-INVITE_TEXT = "Will you come with me to watch the Spider-Man movie on 31/07 evening? 🕷️❤️"
+MAX_NAME_LENGTH = 40
+YES_SCALE_MIN = 1.0
+YES_SCALE_MAX = 1.9
 
 
 def init_session_state() -> None:
-    """Initialize session flags used to prevent duplicate submissions and emails."""
-    if "response_submitted" not in st.session_state:
-        st.session_state.response_submitted = False
-    if "submitted_answer" not in st.session_state:
-        st.session_state.submitted_answer = None
-    if "email_sent" not in st.session_state:
-        st.session_state.email_sent = False
+    """Initialize all session fields used by the app."""
+    defaults: dict[str, object] = {
+        "visitor_name": "",
+        "name_submitted": False,
+        "response_submitted": False,
+        "submitted_answer": "",
+        "email_sent": False,
+        "no_escape_count": 0,
+        "yes_scale": 1.0,
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
 
 
-def get_answer_from_query() -> str | None:
-    """Read and normalize answer query param coming from the front-end buttons."""
-    raw_value = st.query_params.get("answer")
-    if raw_value is None:
-        return None
+def inject_base_page_css() -> None:
+    """Hide default Streamlit chrome and keep iframe edge to edge."""
+    st.markdown(
+        """
+        <style>
+          .stAppHeader, [data-testid="stToolbar"], [data-testid="stDecoration"], #MainMenu, footer {
+            visibility: hidden;
+            height: 0;
+            position: fixed;
+          }
+          [data-testid="stHeaderActionElements"] {
+            display: none;
+          }
+          .block-container {
+            max-width: 100% !important;
+            padding: 0 !important;
+          }
+          div[data-testid="stMarkdownContainer"] p {
+            margin-bottom: 0;
+          }
+          iframe {
+            border: 0 !important;
+          }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    if isinstance(raw_value, list):
-        answer = raw_value[0].strip().lower() if raw_value else ""
-    else:
-        answer = str(raw_value).strip().lower()
 
-    # Only "yes" can be submitted. "No" is intentionally impossible in UI.
-    if answer == "yes":
-        return answer
-    return None
+def sanitize_name(raw_name: str) -> str:
+    """Trim spaces and constrain length for safe display."""
+    return raw_name.strip()[:MAX_NAME_LENGTH]
 
 
-def send_response_email(answer: str) -> bool:
-    """Send response notification email through Gmail SMTP SSL using Streamlit secrets."""
-    required_keys = ("EMAIL_SENDER", "EMAIL_RECIPIENT", "EMAIL_APP_PASSWORD")
-    missing_keys = [key for key in required_keys if key not in st.secrets]
-    if missing_keys:
-        LOGGER.warning("Missing Streamlit email secret keys: %s", ", ".join(missing_keys))
+def render_name_entry_card() -> None:
+    """Render the first screen that asks for the visitor name."""
+    st.markdown(
+        """
+        <style>
+          .welcome-stage {
+            min-height: 100dvh;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background:
+              radial-gradient(circle at 20% 15%, #203768 0%, #111827 38%, #090d16 80%, #060910 100%);
+            padding: clamp(12px, 3.5vw, 30px);
+            position: relative;
+            overflow: hidden;
+          }
+          .welcome-stage::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background-image: radial-gradient(rgba(255, 255, 255, 0.12) 1px, transparent 1px);
+            background-size: 14px 14px;
+            opacity: 0.24;
+            pointer-events: none;
+          }
+          .welcome-card {
+            width: min(520px, 100%);
+            border-radius: 24px;
+            border: 2px solid rgba(255, 255, 255, 0.16);
+            background: linear-gradient(155deg, rgba(220, 47, 63, 0.18), rgba(20, 84, 216, 0.2), rgba(8, 12, 20, 0.92));
+            box-shadow: 0 24px 58px rgba(0, 0, 0, 0.38);
+            padding: clamp(18px, 5vw, 34px);
+            backdrop-filter: blur(3px);
+            animation: welcomeEnter 700ms ease;
+            position: relative;
+          }
+          .welcome-card h1 {
+            margin: 0 0 10px 0;
+            color: #fff4cc;
+            line-height: 1.25;
+            font-size: clamp(1.45rem, 4.8vw, 2.2rem);
+          }
+          .welcome-sub {
+            color: #dbe9ff;
+            font-weight: 700;
+            margin-bottom: 16px;
+            font-size: clamp(0.94rem, 2.8vw, 1.02rem);
+          }
+          @keyframes welcomeEnter {
+            from {
+              opacity: 0;
+              transform: translateY(20px) scale(0.98);
+            }
+            to {
+              opacity: 1;
+              transform: translateY(0) scale(1);
+            }
+          }
+          .welcome-web {
+            position: absolute;
+            width: clamp(70px, 16vw, 115px);
+            opacity: 0.35;
+            pointer-events: none;
+          }
+          .welcome-web.wl {
+            top: 6px;
+            left: 8px;
+            transform: rotate(-8deg);
+          }
+          .welcome-web.wr {
+            top: 8px;
+            right: 10px;
+            transform: rotate(10deg);
+          }
+          div[data-testid="stTextInputRootElement"] label p {
+            color: #ffe8a2 !important;
+            font-weight: 800 !important;
+            letter-spacing: 0.03em;
+          }
+          div[data-testid="stTextInputRootElement"] input {
+            background: rgba(255, 255, 255, 0.95) !important;
+            border: 2px solid #123f9f !important;
+            border-radius: 12px !important;
+            min-height: 50px !important;
+            font-size: 1rem !important;
+            color: #171d2a !important;
+          }
+          div[data-testid="stFormSubmitButton"] button {
+            width: 100%;
+            min-height: 52px;
+            border-radius: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.28);
+            color: white;
+            font-size: 1.03rem;
+            font-weight: 800;
+            background: linear-gradient(130deg, #df3042, #1a59da);
+            transition: transform 150ms ease, filter 150ms ease;
+          }
+          div[data-testid="stFormSubmitButton"] button:hover {
+            transform: translateY(-1px);
+            filter: brightness(1.06);
+          }
+        </style>
+        <div class="welcome-stage">
+          <div class="welcome-card">
+            <svg class="welcome-web wl" viewBox="0 0 100 100" aria-hidden="true"><path d="M50 5L50 95M5 50L95 50M18 18L82 82M82 18L18 82M10 35C32 44 68 44 90 35M10 65C32 56 68 56 90 65M35 10C44 32 44 68 35 90M65 10C56 32 56 68 65 90" stroke="#cfe7ff" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+            <svg class="welcome-web wr" viewBox="0 0 100 100" aria-hidden="true"><path d="M50 5L50 95M5 50L95 50M18 18L82 82M82 18L18 82M10 35C32 44 68 44 90 35M10 65C32 56 68 56 90 65M35 10C44 32 44 68 35 90M65 10C56 32 56 68 65 90" stroke="#cfe7ff" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+            <h1>Enter your name 🕷️</h1>
+            <div class="welcome-sub">Your spider mission starts here.</div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    with st.form("name_form", clear_on_submit=False):
+        raw_name = st.text_input("NAME", value=st.session_state.visitor_name, max_chars=MAX_NAME_LENGTH + 6)
+        submitted = st.form_submit_button("Continue 🕸️")
+
+    if submitted:
+        clean_name = sanitize_name(raw_name)
+        if not clean_name:
+            st.error("Please enter a name before continuing.")
+            return
+        if len(clean_name) > MAX_NAME_LENGTH:
+            st.error(f"Please keep the name at {MAX_NAME_LENGTH} characters or fewer.")
+            return
+        st.session_state.visitor_name = clean_name
+        st.session_state.name_submitted = True
+        st.rerun()
+
+
+def send_yes_email(visitor_name: str) -> bool:
+    """Send one secure YES notification email using Streamlit secrets."""
+    try:
+        sender = st.secrets["EMAIL_SENDER"]
+        recipient = st.secrets["EMAIL_RECIPIENT"]
+        app_password = st.secrets["EMAIL_APP_PASSWORD"]
+    except Exception:
+        LOGGER.warning("Email send skipped: required Streamlit secrets are missing.")
         return False
 
-    sender = st.secrets["EMAIL_SENDER"]
-    recipient = st.secrets["EMAIL_RECIPIENT"]
-    app_password = st.secrets["EMAIL_APP_PASSWORD"]
-
     response_time = datetime.now(MELBOURNE_TZ).strftime("%Y-%m-%d %H:%M:%S %Z")
-
-    if answer != "yes":
-      return False
-
     subject = "Spider-Man invitation response: YES ❤️"
-    body_intro = "Someone clicked YES on your Spider-Man movie invitation! ❤️🕷️"
-
     body = (
-        f"{body_intro}\n\n"
-        f"Response: {answer.upper()}\n"
+        f"{visitor_name} clicked YES on your Spider-Man movie invitation! ❤️🕷️\n\n"
+        f"Name: {visitor_name}\n"
+        "Selected answer: YES\n"
         f"Response time (Australia/Melbourne): {response_time}\n"
+        "Source: Response came from the Spider-Man invitation app.\n"
     )
 
     message = EmailMessage()
@@ -81,36 +234,75 @@ def send_response_email(answer: str) -> bool:
             smtp.send_message(message)
         return True
     except Exception as exc:  # pragma: no cover
-        # Safe log only: no secret values are included.
-        LOGGER.warning("Email send failed for invitation response. Error type: %s", type(exc).__name__)
+        LOGGER.warning("Email delivery failed safely. Error type: %s", type(exc).__name__)
         return False
 
 
-def process_submission_if_needed() -> None:
-    """Handle first valid response per session and send at most one email."""
-    answer = get_answer_from_query()
-    if not answer:
+def clamp_yes_scale(value: float) -> float:
+    """Keep the Yes button growth in a mobile-safe range."""
+    return max(YES_SCALE_MIN, min(YES_SCALE_MAX, value))
+
+
+def process_component_event(event_payload: object) -> None:
+    """Handle events from the custom HTML component."""
+    if not isinstance(event_payload, dict):
         return
 
-    # Avoid duplicate processing after reruns in the same browser session.
+    event_type = str(event_payload.get("type", "")).strip().lower()
+    attempts_raw = event_payload.get("attempts", st.session_state.no_escape_count)
+    scale_raw = event_payload.get("yes_scale", st.session_state.yes_scale)
+
+    try:
+        attempts = max(0, int(attempts_raw))
+    except (TypeError, ValueError):
+        attempts = st.session_state.no_escape_count
+
+    try:
+        yes_scale = clamp_yes_scale(float(scale_raw))
+    except (TypeError, ValueError):
+        yes_scale = float(st.session_state.yes_scale)
+
+    if event_type == "progress" and not st.session_state.response_submitted:
+        st.session_state.no_escape_count = max(st.session_state.no_escape_count, attempts)
+        st.session_state.yes_scale = max(float(st.session_state.yes_scale), yes_scale)
+        return
+
+    if event_type != "yes":
+        return
+
     if st.session_state.response_submitted:
-        st.query_params.clear()
         return
 
+    st.session_state.no_escape_count = max(st.session_state.no_escape_count, attempts)
+    st.session_state.yes_scale = max(float(st.session_state.yes_scale), yes_scale)
     st.session_state.response_submitted = True
-    st.session_state.submitted_answer = answer
-    st.session_state.email_sent = send_response_email(answer)
-    st.query_params.clear()
+    st.session_state.submitted_answer = "YES"
+
+    # Send email once per session only.
+    if not st.session_state.email_sent:
+        st.session_state.email_sent = send_yes_email(st.session_state.visitor_name)
+
+    st.rerun()
 
 
-def build_app_html(*, response_submitted: bool, submitted_answer: str | None) -> str:
-    """Render responsive comic-themed UI and animated interactions."""
-    is_yes = response_submitted and submitted_answer == "yes"
-    is_no = response_submitted and submitted_answer == "no"
+def build_invitation_html(
+    *,
+    safe_visitor_name: str,
+    response_submitted: bool,
+    submitted_answer: str,
+    email_sent: bool,
+    no_escape_count: int,
+    yes_scale: float,
+) -> str:
+    """Build responsive invitation UI with custom pointer and touch behavior."""
+    invite_text = (
+        f"Would {safe_visitor_name} be interested in going to watch the Spider-Man movie on "
+        "31/07 evening? 🕷️❤️"
+    )
+    yes_scale_clamped = clamp_yes_scale(yes_scale)
+    submitted_attr = "true" if response_submitted else "false"
+    sent_note = "Your answer has been sent 🕷️" if email_sent else "Your answer was received ❤️"
 
-    selected_label = "Yes ❤️" if is_yes else ("No 🕸️" if is_no else "")
-
-    # The dynamic state is embedded in HTML attributes for client-side animation control.
     return f"""
 <!DOCTYPE html>
 <html lang="en">
@@ -120,14 +312,12 @@ def build_app_html(*, response_submitted: bool, submitted_answer: str | None) ->
   <title>Spider Invite</title>
   <style>
     :root {{
-      --red: #dc2f3f;
+      --red: #df3042;
       --blue: #1454d8;
-      --ink: #0c111b;
-      --black: #06090f;
-      --white: #fffaf2;
-      --cream: #fff2d9;
-      --glow: #ffd35c;
-      --panel: rgba(13, 18, 29, 0.9);
+      --ink: #0d121f;
+      --paper: #fffaf2;
+      --gold: #ffe082;
+      --yes-scale: {yes_scale_clamped};
     }}
 
     * {{ box-sizing: border-box; }}
@@ -139,8 +329,8 @@ def build_app_html(*, response_submitted: bool, submitted_answer: str | None) ->
       overflow-x: hidden;
       font-family: "Trebuchet MS", "Segoe UI", sans-serif;
       background:
-        radial-gradient(circle at 20% 12%, #223464 0%, #111827 35%, #090d15 70%, #070a11 100%);
-      color: var(--white);
+        radial-gradient(circle at 18% 12%, #214174 0%, #111827 34%, #090d15 76%, #060910 100%);
+      color: #f4f8ff;
     }}
 
     .stage {{
@@ -149,28 +339,29 @@ def build_app_html(*, response_submitted: bool, submitted_answer: str | None) ->
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 14px;
-      position: relative;
+      padding: clamp(8px, 2.2vw, 22px);
       overflow: hidden;
+      position: relative;
       isolation: isolate;
     }}
 
-    .comic-dots {{
+    .stage::before {{
+      content: "";
       position: absolute;
       inset: 0;
-      opacity: 0.25;
-      background-image: radial-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px);
-      background-size: 15px 15px;
-      z-index: -5;
+      opacity: 0.23;
+      background-image: radial-gradient(rgba(255, 255, 255, 0.12) 1px, transparent 1px);
+      background-size: 14px 14px;
+      z-index: -6;
     }}
 
     .cityline {{
       position: absolute;
       inset: auto 0 0 0;
-      height: 22dvh;
-      min-height: 110px;
-      background: linear-gradient(180deg, rgba(5, 7, 11, 0) 0%, rgba(4, 6, 9, 0.84) 45%, rgba(3, 4, 7, 1) 100%);
-      z-index: -4;
+      height: 23dvh;
+      min-height: 105px;
+      background: linear-gradient(180deg, rgba(5, 8, 12, 0) 0%, rgba(5, 8, 12, 0.86) 45%, rgba(5, 8, 12, 1) 100%);
+      z-index: -5;
     }}
 
     .cityline::before {{
@@ -180,31 +371,30 @@ def build_app_html(*, response_submitted: bool, submitted_answer: str | None) ->
       height: 100%;
       background:
         linear-gradient(to right,
-          transparent 0 3%, #090f1a 3% 7%, transparent 7% 9%, #0b1526 9% 14%, transparent 14% 17%,
-          #081220 17% 21%, transparent 21% 23%, #0b1628 23% 29%, transparent 29% 32%, #091322 32% 37%,
-          transparent 37% 39%, #0c1729 39% 44%, transparent 44% 47%, #091323 47% 53%, transparent 53% 56%,
-          #0b1528 56% 62%, transparent 62% 65%, #08111f 65% 70%, transparent 70% 72%, #0b1628 72% 77%,
-          transparent 77% 80%, #091321 80% 86%, transparent 86% 88%, #0b1527 88% 93%, transparent 93% 100%);
-      opacity: 0.9;
+          transparent 0 3%, #091221 3% 8%, transparent 8% 10%, #0b1528 10% 15%, transparent 15% 19%,
+          #091221 19% 24%, transparent 24% 27%, #0b1628 27% 32%, transparent 32% 36%, #08111f 36% 41%,
+          transparent 41% 44%, #0b1628 44% 49%, transparent 49% 52%, #091323 52% 58%, transparent 58% 62%,
+          #0b1528 62% 67%, transparent 67% 72%, #08111f 72% 78%, transparent 78% 81%, #0b1628 81% 87%,
+          transparent 87% 90%, #091321 90% 95%, transparent 95% 100%);
     }}
 
     .web {{
       position: absolute;
-      width: clamp(70px, 15vw, 130px);
-      opacity: 0.38;
-      animation: drift 10s ease-in-out infinite;
+      width: clamp(70px, 12vw, 130px);
+      opacity: 0.35;
       pointer-events: none;
-      z-index: -3;
+      animation: drift 9s ease-in-out infinite;
+      z-index: -4;
     }}
 
-    .web.w1 {{ top: 2.5%; left: 2.2%; animation-delay: 0.2s; }}
-    .web.w2 {{ top: 8%; right: 4%; animation-delay: 1.2s; }}
-    .web.w3 {{ bottom: 20%; left: 6%; animation-delay: 2.1s; }}
-    .web.w4 {{ bottom: 24%; right: 7%; animation-delay: 2.9s; }}
+    .w1 {{ top: 2%; left: 2%; }}
+    .w2 {{ top: 7%; right: 4%; animation-delay: 1s; }}
+    .w3 {{ bottom: 21%; left: 6%; animation-delay: 2s; }}
+    .w4 {{ bottom: 23%; right: 7%; animation-delay: 2.8s; }}
 
     @keyframes drift {{
       0%, 100% {{ transform: translateY(0) rotate(0deg); }}
-      50% {{ transform: translateY(-13px) rotate(4deg); }}
+      50% {{ transform: translateY(-10px) rotate(4deg); }}
     }}
 
     .sparkle {{
@@ -212,60 +402,59 @@ def build_app_html(*, response_submitted: bool, submitted_answer: str | None) ->
       width: 6px;
       height: 6px;
       border-radius: 50%;
-      background: #ffe48d;
-      box-shadow: 0 0 12px #ffe48d;
-      animation: twinkle 2.4s ease-in-out infinite;
+      background: #ffe596;
+      box-shadow: 0 0 10px #ffe596;
+      animation: twinkle 2.3s ease-in-out infinite;
       pointer-events: none;
-      z-index: -2;
+      z-index: -3;
     }}
 
     @keyframes twinkle {{
-      0%, 100% {{ transform: scale(0.72); opacity: 0.35; }}
+      0%, 100% {{ transform: scale(0.7); opacity: 0.35; }}
       50% {{ transform: scale(1.35); opacity: 1; }}
     }}
 
     .card {{
-      width: min(900px, 100%);
-      min-height: min(720px, calc(100dvh - 28px));
-      border-radius: 26px;
+      width: min(930px, 100%);
+      min-height: min(760px, calc(100dvh - 16px));
+      border-radius: clamp(18px, 3vw, 28px);
+      border: 2px solid rgba(255, 255, 255, 0.14);
+      background: linear-gradient(145deg, rgba(19, 30, 55, 0.96), rgba(19, 15, 32, 0.92));
+      box-shadow: 0 24px 70px rgba(0, 0, 0, 0.4);
+      padding: clamp(14px, 3.2vw, 34px);
       position: relative;
       overflow: hidden;
-      padding: clamp(16px, 4.2vw, 38px);
-      background: linear-gradient(140deg, rgba(17, 28, 51, 0.95), rgba(22, 15, 35, 0.91));
-      border: 2px solid rgba(255, 255, 255, 0.12);
-      box-shadow: 0 24px 66px rgba(0, 0, 0, 0.42);
       display: flex;
       flex-direction: column;
-      justify-content: center;
-      gap: 14px;
-      animation: enter 800ms cubic-bezier(.2, 1, .2, 1);
+      gap: clamp(10px, 2.2vw, 18px);
+      animation: riseIn 760ms cubic-bezier(.2, 1, .2, 1);
     }}
 
     .card::before {{
       content: "";
       position: absolute;
-      inset: -140% -30% auto -30%;
-      height: 290%;
-      transform: rotate(11deg);
-      background: linear-gradient(120deg, rgba(220, 47, 63, 0.2), rgba(20, 84, 216, 0.24), rgba(255, 211, 92, 0.15));
+      inset: -120% -20% auto -20%;
+      height: 260%;
+      background: linear-gradient(120deg, rgba(223, 48, 66, 0.22), rgba(20, 84, 216, 0.24), rgba(255, 224, 130, 0.14));
+      transform: rotate(10deg);
       pointer-events: none;
     }}
 
-    @keyframes enter {{
-      from {{ opacity: 0; transform: translateY(26px) scale(0.98); }}
+    @keyframes riseIn {{
+      from {{ opacity: 0; transform: translateY(24px) scale(0.98); }}
       to {{ opacity: 1; transform: translateY(0) scale(1); }}
     }}
 
     .spider-wrap {{
       position: absolute;
-      top: -10px;
+      top: -14px;
       left: 50%;
       transform: translateX(-50%);
       width: 74px;
       height: 170px;
-      transform-origin: top center;
       pointer-events: none;
-      animation: swing 3.1s ease-in-out infinite;
+      animation: swing 2.9s ease-in-out infinite;
+      transform-origin: top center;
       z-index: 2;
     }}
 
@@ -273,43 +462,43 @@ def build_app_html(*, response_submitted: bool, submitted_answer: str | None) ->
       width: 2px;
       height: 108px;
       margin: 0 auto;
-      background: linear-gradient(180deg, rgba(240, 246, 255, 0.8), rgba(255, 255, 255, 0.12));
+      background: linear-gradient(180deg, rgba(245, 248, 255, 0.82), rgba(255, 255, 255, 0.12));
     }}
 
     .spider {{
-      width: 31px;
-      height: 41px;
+      width: 32px;
+      height: 40px;
       margin: -2px auto 0;
       position: relative;
     }}
 
     .spider-body {{
       width: 24px;
-      height: 26px;
+      height: 27px;
+      border-radius: 50% 50% 56% 56%;
       margin: 0 auto;
-      border-radius: 46% 46% 56% 56%;
-      border: 1px solid #2f3441;
-      background: #0d1118;
+      background: #0d121f;
+      border: 1px solid #30384b;
       position: relative;
     }}
 
     .spider-body::before {{
       content: "";
+      position: absolute;
+      left: 6px;
+      top: -6px;
       width: 11px;
       height: 8px;
       border-radius: 50%;
-      border: 1px solid #2f3441;
-      background: #161c27;
-      position: absolute;
-      top: -6px;
-      left: 6px;
+      background: #151d2b;
+      border: 1px solid #30384b;
     }}
 
     .leg {{
       position: absolute;
       width: 14px;
       height: 2px;
-      background: #2a3041;
+      background: #2c3447;
       top: 9px;
       transform-origin: 0% 50%;
     }}
@@ -328,17 +517,16 @@ def build_app_html(*, response_submitted: bool, submitted_answer: str | None) ->
       align-self: flex-start;
       display: inline-flex;
       align-items: center;
-      gap: 10px;
-      border-radius: 999px;
-      font-size: clamp(0.75rem, 2.6vw, 0.92rem);
+      gap: 9px;
       padding: 9px 13px;
+      border-radius: 999px;
+      font-size: clamp(0.74rem, 2.4vw, 0.94rem);
       text-transform: uppercase;
-      letter-spacing: 0.03em;
+      letter-spacing: 0.04em;
       font-weight: 800;
-      color: #ffe694;
-      border: 1px solid rgba(255, 230, 148, 0.3);
-      background: rgba(255, 218, 111, 0.13);
-      position: relative;
+      color: #ffeaa8;
+      border: 1px solid rgba(255, 235, 167, 0.33);
+      background: rgba(255, 220, 119, 0.13);
       z-index: 2;
     }}
 
@@ -346,20 +534,20 @@ def build_app_html(*, response_submitted: bool, submitted_answer: str | None) ->
       width: 8px;
       height: 8px;
       border-radius: 50%;
-      background: #ffe694;
-      box-shadow: 0 0 10px #ffe694;
+      background: #ffeaa8;
+      box-shadow: 0 0 10px #ffeaa8;
     }}
 
     .bubble {{
       position: relative;
       z-index: 2;
-      background: var(--white);
-      color: #141824;
-      border: 3px solid #111726;
-      border-radius: 22px;
-      box-shadow: 7px 7px 0 #101624;
-      padding: clamp(16px, 4vw, 28px);
-      min-height: clamp(115px, 22vw, 160px);
+      border-radius: clamp(14px, 3.3vw, 22px);
+      border: 3px solid #121a2d;
+      background: var(--paper);
+      color: #131826;
+      box-shadow: 6px 6px 0 #101623;
+      padding: clamp(14px, 4vw, 28px);
+      min-height: clamp(112px, 22vw, 170px);
       display: flex;
       align-items: center;
     }}
@@ -368,143 +556,153 @@ def build_app_html(*, response_submitted: bool, submitted_answer: str | None) ->
       content: "";
       position: absolute;
       left: 36px;
-      bottom: -18px;
-      width: 22px;
-      height: 22px;
-      background: var(--white);
-      border-left: 3px solid #111726;
-      border-bottom: 3px solid #111726;
+      bottom: -16px;
+      width: 20px;
+      height: 20px;
+      background: var(--paper);
+      border-left: 3px solid #121a2d;
+      border-bottom: 3px solid #121a2d;
       transform: rotate(-45deg);
     }}
 
     .invite-text {{
       margin: 0;
-      width: 100%;
-      font-size: clamp(1.02rem, 3.9vw, 2rem);
+      font-size: clamp(1.02rem, 3.7vw, 2.05rem);
       line-height: 1.35;
-      font-weight: 800;
+      font-weight: 900;
       text-wrap: pretty;
-      word-break: normal;
       overflow-wrap: break-word;
     }}
 
     .status {{
       min-height: 30px;
-      z-index: 2;
-      color: #ffe8a9;
+      font-size: clamp(0.95rem, 2.7vw, 1.05rem);
+      color: #ffebad;
       font-weight: 800;
-      font-size: clamp(0.95rem, 2.9vw, 1.08rem);
+      z-index: 2;
       text-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
     }}
 
-    .button-zone {{
+    .arena {{
       position: relative;
       z-index: 2;
-      border-radius: 16px;
-      border: 1px dashed rgba(255, 255, 255, 0.24);
-      background: rgba(9, 13, 22, 0.3);
-      min-height: clamp(150px, 25vh, 220px);
+      border-radius: 18px;
+      border: 1px dashed rgba(255, 255, 255, 0.28);
+      background: rgba(7, 12, 23, 0.42);
+      min-height: clamp(160px, 28vh, 255px);
       overflow: hidden;
-      padding: 12px;
     }}
 
     .action-btn {{
       position: absolute;
       border: 0;
       border-radius: 14px;
-      font-size: clamp(1rem, 3.8vw, 1.18rem);
-      font-weight: 800;
-      padding: 14px 22px;
-      min-height: 52px;
-      min-width: 130px;
-      cursor: pointer;
-      transition: transform 180ms ease, filter 180ms ease, box-shadow 180ms ease;
+      min-height: clamp(52px, 8vw, 60px);
+      min-width: clamp(130px, 26vw, 170px);
+      padding: clamp(12px, 2.2vw, 16px) clamp(18px, 2.4vw, 24px);
+      font-size: clamp(1.02rem, 3.5vw, 1.25rem);
+      font-weight: 900;
+      line-height: 1;
+      color: #ffffff;
+      border: 1px solid rgba(255, 255, 255, 0.3);
       touch-action: manipulation;
       -webkit-tap-highlight-color: transparent;
       user-select: none;
+      cursor: pointer;
     }}
 
-    .action-btn:active {{ transform: translateY(1px) scale(0.98); }}
-
     .yes-btn {{
-      left: 16px;
-      top: 50%;
-      transform: translateY(-50%);
-      color: #fff;
-      border: 1px solid rgba(255, 255, 255, 0.25);
-      background: linear-gradient(130deg, #f24f5e, #dc2f3f);
-      box-shadow: 0 11px 22px rgba(220, 47, 63, 0.38);
+      left: clamp(10px, 2vw, 20px);
+      bottom: clamp(10px, 2vw, 18px);
+      background: linear-gradient(130deg, #f14f60, #df3042);
+      box-shadow: 0 10px 24px rgba(223, 48, 66, 0.42);
+      transform: scale(var(--yes-scale));
+      transform-origin: left bottom;
+      transition: transform 190ms ease, filter 190ms ease, box-shadow 190ms ease;
+      z-index: 3;
+    }}
+
+    .yes-btn.pulse {{
+      animation: yesPulse 280ms ease;
+    }}
+
+    @keyframes yesPulse {{
+      0% {{ transform: scale(calc(var(--yes-scale) * 0.97)); }}
+      45% {{ transform: scale(calc(var(--yes-scale) * 1.04)); }}
+      100% {{ transform: scale(var(--yes-scale)); }}
     }}
 
     .yes-btn:hover {{
-      transform: translateY(-52%) scale(1.03);
-      filter: brightness(1.04);
+      filter: brightness(1.05);
     }}
 
     .no-btn {{
-      right: 16px;
-      top: 50%;
-      transform: translateY(-50%);
-      color: #fff;
-      border: 1px solid rgba(255, 255, 255, 0.25);
-      background: linear-gradient(130deg, #3272ff, #1454d8);
-      box-shadow: 0 11px 22px rgba(20, 84, 216, 0.38);
-    }}
-
-    .no-btn.runaway {{ animation: jumpy 240ms ease; }}
-
-    @keyframes jumpy {{
-      0% {{ transform: scale(1) rotate(0deg); }}
-      30% {{ transform: scale(1.04) rotate(-4deg); }}
-      60% {{ transform: scale(0.97) rotate(3deg); }}
-      100% {{ transform: scale(1) rotate(0deg); }}
-    }}
-
-    .answer-tag {{
+      left: 70%;
+      top: 45%;
+      transform: translate(-50%, -50%) rotate(0deg);
+      background: linear-gradient(130deg, #3f7dff, #1454d8);
+      box-shadow: 0 10px 24px rgba(20, 84, 216, 0.4);
+      transition: left 70ms linear, top 70ms linear, transform 70ms linear;
       z-index: 2;
-      align-self: flex-start;
-      padding: 9px 14px;
+    }}
+
+    .no-btn.zap {{
+      animation: zap 130ms linear;
+    }}
+
+    @keyframes zap {{
+      0% {{ filter: brightness(1.05); }}
+      30% {{ filter: brightness(1.35) saturate(1.2); }}
+      60% {{ filter: brightness(0.95); }}
+      100% {{ filter: brightness(1); }}
+    }}
+
+    .attempts {{
+      position: absolute;
+      right: clamp(8px, 2vw, 16px);
+      bottom: clamp(8px, 2vw, 14px);
       border-radius: 999px;
-      font-size: clamp(0.88rem, 2.8vw, 1.02rem);
-      font-weight: 800;
-      border: 1px solid rgba(255, 255, 255, 0.3);
-      background: rgba(255, 255, 255, 0.08);
-      color: #fbe9af;
-    }}
-
-    .sent-note {{
-      z-index: 2;
-      font-size: clamp(0.9rem, 2.6vw, 1rem);
-      color: #d9ebff;
-      opacity: 0.94;
+      padding: 8px 12px;
+      background: rgba(255, 255, 255, 0.09);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      font-size: clamp(0.78rem, 2.3vw, 0.9rem);
+      color: #f9edc2;
       font-weight: 700;
+      z-index: 1;
     }}
 
     .celebrate {{
       display: none;
       z-index: 2;
       border-radius: 18px;
-      border: 1px solid rgba(255, 255, 255, 0.25);
-      background: linear-gradient(145deg, rgba(220, 47, 63, 0.2), rgba(20, 84, 216, 0.22));
+      border: 1px solid rgba(255, 255, 255, 0.29);
+      background: linear-gradient(145deg, rgba(223, 48, 66, 0.22), rgba(20, 84, 216, 0.24));
       text-align: center;
-      padding: clamp(18px, 3.5vw, 26px);
-      animation: pop 450ms ease;
+      padding: clamp(16px, 3.4vw, 26px);
+      animation: popIn 450ms ease;
     }}
 
     .celebrate h2 {{
       margin: 0;
-      font-size: clamp(1.45rem, 5vw, 2.5rem);
-      color: #ffe8a0;
+      color: #ffe8a8;
+      font-size: clamp(1.35rem, 4.8vw, 2.4rem);
       line-height: 1.3;
-      text-wrap: balance;
     }}
 
-    @keyframes pop {{
-      from {{ opacity: 0; transform: scale(0.94); }}
+    .sent-note {{
+      text-align: center;
+      font-size: clamp(0.92rem, 2.7vw, 1rem);
+      color: #e9f2ff;
+      font-weight: 700;
+      margin-top: 8px;
+    }}
+
+    @keyframes popIn {{
+      from {{ opacity: 0; transform: scale(0.95); }}
       to {{ opacity: 1; transform: scale(1); }}
     }}
 
-    #confetti-layer, #heart-layer {{
+    #confetti-layer, #heart-layer, #webburst-layer {{
       position: fixed;
       inset: 0;
       pointer-events: none;
@@ -516,74 +714,99 @@ def build_app_html(*, response_submitted: bool, submitted_answer: str | None) ->
       position: absolute;
       width: 10px;
       height: 16px;
-      animation: confettiFall linear forwards;
       opacity: 0.95;
+      animation: confettiFall linear forwards;
     }}
 
     @keyframes confettiFall {{
-      from {{ transform: translate3d(0, -12vh, 0) rotate(0deg); opacity: 1; }}
-      to {{ transform: translate3d(var(--x-end), 110vh, 0) rotate(760deg); opacity: 0.95; }}
+      from {{ transform: translate3d(0, -10vh, 0) rotate(0deg); }}
+      to {{ transform: translate3d(var(--x-end), 110vh, 0) rotate(760deg); }}
     }}
 
     .heart {{
       position: absolute;
-      font-size: 24px;
-      filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.35));
+      font-size: clamp(18px, 3.5vw, 28px);
       animation: rise 3.8s ease-in forwards;
+      filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.34));
     }}
 
     @keyframes rise {{
-      from {{ transform: translateY(0) scale(0.9); opacity: 0; }}
+      from {{ transform: translateY(0) scale(0.85); opacity: 0; }}
       14% {{ opacity: 1; }}
-      to {{ transform: translateY(-90vh) translateX(var(--drift)) scale(1.35); opacity: 0; }}
+      to {{ transform: translateY(-92vh) translateX(var(--drift)) scale(1.28); opacity: 0; }}
+    }}
+
+    .webburst {{
+      position: absolute;
+      width: clamp(32px, 7vw, 58px);
+      height: clamp(32px, 7vw, 58px);
+      border-radius: 50%;
+      border: 2px solid rgba(214, 236, 255, 0.85);
+      opacity: 0;
+      animation: webOut 860ms ease-out forwards;
+    }}
+
+    @keyframes webOut {{
+      0% {{ transform: scale(0.35); opacity: 0.95; }}
+      100% {{ transform: scale(2.3); opacity: 0; }}
+    }}
+
+    .answer-tag {{
+      align-self: flex-start;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      background: rgba(255, 255, 255, 0.1);
+      color: #ffe9aa;
+      font-weight: 800;
+      font-size: clamp(0.86rem, 2.6vw, 1rem);
+      padding: 9px 13px;
+      z-index: 2;
     }}
 
     .footer {{
-      z-index: 2;
       margin-top: auto;
       text-align: center;
       font-size: 0.9rem;
-      color: rgba(255, 255, 255, 0.8);
+      color: rgba(255, 255, 255, 0.79);
+      z-index: 2;
     }}
 
-    @media (max-width: 900px) {{
+    @media (max-width: 760px) {{
       .card {{
-        min-height: min(740px, calc(100dvh - 20px));
+        min-height: min(790px, calc(100dvh - 10px));
+      }}
+      .arena {{
+        min-height: clamp(190px, 30vh, 300px);
+      }}
+      .no-btn {{
+        left: 66%;
+        top: 42%;
       }}
     }}
 
-    @media (max-width: 680px) {{
-      .stage {{ padding: 8px; }}
-
-      .card {{
-        border-radius: 20px;
-        min-height: min(760px, calc(100dvh - 14px));
-        padding: 14px;
-      }}
-
-      .bubble {{ box-shadow: 5px 5px 0 #101624; }}
-
-      .button-zone {{ min-height: 220px; }}
-
-      .yes-btn {{ left: 10px; }}
-      .no-btn {{ right: 10px; }}
-    }}
-
-    @media (max-height: 680px) and (orientation: landscape) {{
+    @media (max-height: 690px) and (orientation: landscape) {{
       .stage {{
         align-items: flex-start;
-        padding-top: 8px;
-        padding-bottom: 8px;
       }}
-
-      .card {{ min-height: 600px; }}
-      .button-zone {{ min-height: 145px; }}
+      .card {{
+        min-height: 620px;
+      }}
+      .arena {{
+        min-height: 150px;
+      }}
     }}
   </style>
 </head>
 <body>
-  <div class="stage" data-submitted="{str(response_submitted).lower()}" data-answer="{submitted_answer or ''}">
-    <div class="comic-dots"></div>
+  <div
+    id="stage"
+    class="stage"
+    data-submitted="{submitted_attr}"
+    data-answer="{submitted_answer}"
+    data-email-sent="{'true' if email_sent else 'false'}"
+    data-init-attempts="{no_escape_count}"
+    data-init-scale="{yes_scale_clamped}"
+  >
     <div class="cityline"></div>
 
     <svg class="web w1" viewBox="0 0 100 100" aria-hidden="true"><path d="M50 5L50 95M5 50L95 50M18 18L82 82M82 18L18 82M10 35C32 44 68 44 90 35M10 65C32 56 68 56 90 65M35 10C44 32 44 68 35 90M65 10C56 32 56 68 65 90" stroke="#cfe7ff" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
@@ -591,9 +814,9 @@ def build_app_html(*, response_submitted: bool, submitted_answer: str | None) ->
     <svg class="web w3" viewBox="0 0 100 100" aria-hidden="true"><path d="M50 5L50 95M5 50L95 50M18 18L82 82M82 18L18 82M10 35C32 44 68 44 90 35M10 65C32 56 68 56 90 65M35 10C44 32 44 68 35 90M65 10C56 32 56 68 65 90" stroke="#cfe7ff" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
     <svg class="web w4" viewBox="0 0 100 100" aria-hidden="true"><path d="M50 5L50 95M5 50L95 50M18 18L82 82M82 18L18 82M10 35C32 44 68 44 90 35M10 65C32 56 68 56 90 65M35 10C44 32 44 68 35 90M65 10C56 32 56 68 65 90" stroke="#cfe7ff" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
 
-    <div class="sparkle" style="top:9%; left:20%; animation-delay:0.2s"></div>
+    <div class="sparkle" style="top:10%; left:18%; animation-delay:0.2s"></div>
     <div class="sparkle" style="top:16%; right:16%; animation-delay:1.2s"></div>
-    <div class="sparkle" style="top:29%; left:7%; animation-delay:0.6s"></div>
+    <div class="sparkle" style="top:30%; left:7%; animation-delay:0.7s"></div>
     <div class="sparkle" style="top:34%; right:9%; animation-delay:1.8s"></div>
     <div class="sparkle" style="bottom:24%; left:14%; animation-delay:0.4s"></div>
     <div class="sparkle" style="bottom:18%; right:22%; animation-delay:1.5s"></div>
@@ -609,51 +832,142 @@ def build_app_html(*, response_submitted: bool, submitted_answer: str | None) ->
 
       <div class="chip"><span class="chip-dot"></span>Spider Invite Mission</div>
 
-      <div class="bubble">
-        <p class="invite-text">{INVITE_TEXT}</p>
+      <div class="bubble" id="bubble">
+        <p class="invite-text" id="invite-text">{invite_text}</p>
       </div>
 
-      <div id="status" class="status"></div>
+      <div class="status" id="status"></div>
 
-      <div class="button-zone" id="button-zone">
-        <button class="action-btn yes-btn" id="yes-btn" {'disabled' if response_submitted else ''}>Yes ❤️</button>
-        <button class="action-btn no-btn" id="no-btn" {'disabled' if response_submitted else ''}>No 🕸️</button>
+      <div class="arena" id="arena">
+        <button class="action-btn yes-btn" id="yes-btn" aria-label="Yes">Yes ❤️</button>
+        <button class="action-btn no-btn" id="no-btn" aria-label="No">No 🕸️</button>
+        <div class="attempts" id="attempts">Escape attempts: {no_escape_count}</div>
       </div>
-
-      <div class="answer-tag" {'style="display:none;"' if not response_submitted else ''}>Selected response: {selected_label}</div>
-      <div class="sent-note" {'style="display:none;"' if not response_submitted else ''}>Your answer has been sent 🕷️</div>
 
       <div class="celebrate" id="celebrate-panel">
-        <h2>YAY!! ❤️ See you at the movie! 🕷️🍿</h2>
+        <h2>YAY!! ❤️ See you at the movie, {safe_visitor_name}! 🕷️🍿</h2>
+        <div class="sent-note">{sent_note}</div>
       </div>
 
-      <div class="footer">Made with ❤️</div>
+      <div class="answer-tag" id="answer-tag" style="display:none;">Selected answer: YES</div>
+      <div class="footer">Made with original webs, skyline, sparkles and spider vibes.</div>
     </section>
   </div>
 
   <div id="confetti-layer"></div>
   <div id="heart-layer"></div>
+  <div id="webburst-layer"></div>
 
   <script>
-    const stage = document.querySelector(".stage");
+    const stage = document.getElementById("stage");
     const statusNode = document.getElementById("status");
     const yesBtn = document.getElementById("yes-btn");
     const noBtn = document.getElementById("no-btn");
-    const zone = document.getElementById("button-zone");
+    const arena = document.getElementById("arena");
+    const bubble = document.getElementById("bubble");
     const celebratePanel = document.getElementById("celebrate-panel");
+    const answerTag = document.getElementById("answer-tag");
+    const attemptsNode = document.getElementById("attempts");
 
     const submitted = stage.dataset.submitted === "true";
-    const answer = (stage.dataset.answer || "").toLowerCase();
+    const initScale = Number(stage.dataset.initScale || "1") || 1;
+    let yesScale = Math.max(1, Math.min(1.9, initScale));
+    let escapeAttempts = Number(stage.dataset.initAttempts || "0") || 0;
+    let yesDispatched = false;
 
     const playful = [
       "Nice try 😏",
-      "Spider-Sense says no isn't an option!",
-      "You missed! 🕷️",
-      "Try again 😂"
+      "Your Spider-Sense missed! 🕷️",
+      "Nope, too slow 😂",
+      "The No button escaped!",
+      "Maybe press Yes instead? ❤️",
+      "Not today, villain 🕸️",
+      "The multiverse rejected that answer!"
     ];
 
     function rand(min, max) {{
       return Math.floor(Math.random() * (max - min + 1)) + min;
+    }}
+
+    function setFrameHeight() {{
+      const h = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight, 760);
+      if (window.Streamlit && typeof window.Streamlit.setFrameHeight === "function") {{
+        window.Streamlit.setFrameHeight(h);
+      }} else {{
+        window.parent.postMessage({{ isStreamlitMessage: true, type: "streamlit:setFrameHeight", height: h }}, "*");
+      }}
+    }}
+
+    function sendValue(payload) {{
+      if (window.Streamlit && typeof window.Streamlit.setComponentValue === "function") {{
+        window.Streamlit.setComponentValue(payload);
+      }} else {{
+        window.parent.postMessage({{ isStreamlitMessage: true, type: "streamlit:setComponentValue", value: payload }}, "*");
+      }}
+    }}
+
+    function applyYesScale() {{
+      document.documentElement.style.setProperty("--yes-scale", String(yesScale));
+      yesBtn.classList.remove("pulse");
+      void yesBtn.offsetWidth;
+      yesBtn.classList.add("pulse");
+    }}
+
+    function updateAttemptsLabel() {{
+      attemptsNode.textContent = `Escape attempts: ${{escapeAttempts}}`;
+    }}
+
+    function overlaps(rectA, rectB) {{
+      return !(
+        rectA.right <= rectB.left ||
+        rectA.left >= rectB.right ||
+        rectA.bottom <= rectB.top ||
+        rectA.top >= rectB.bottom
+      );
+    }}
+
+    function inflatedRect(rect, pixels) {{
+      return {{
+        left: rect.left - pixels,
+        top: rect.top - pixels,
+        right: rect.right + pixels,
+        bottom: rect.bottom + pixels
+      }};
+    }}
+
+    function chooseSafePosition() {{
+      const arenaRect = arena.getBoundingClientRect();
+      const noRect = noBtn.getBoundingClientRect();
+      const noW = noRect.width;
+      const noH = noRect.height;
+
+      const pad = 8;
+      const minX = pad;
+      const minY = pad;
+      const maxX = Math.max(minX, arenaRect.width - noW - pad);
+      const maxY = Math.max(minY, arenaRect.height - noH - pad);
+
+      const yesRect = inflatedRect(yesBtn.getBoundingClientRect(), 8);
+      const bubbleRect = inflatedRect(bubble.getBoundingClientRect(), 6);
+
+      let candidate = {{ x: rand(minX, Math.floor(maxX)), y: rand(minY, Math.floor(maxY)) }};
+      for (let i = 0; i < 90; i += 1) {{
+        const x = rand(minX, Math.floor(maxX));
+        const y = rand(minY, Math.floor(maxY));
+        const projected = {{
+          left: arenaRect.left + x,
+          top: arenaRect.top + y,
+          right: arenaRect.left + x + noW,
+          bottom: arenaRect.top + y + noH
+        }};
+
+        const collides = overlaps(projected, yesRect) || overlaps(projected, bubbleRect);
+        if (!collides) {{
+          candidate = {{ x, y }};
+          break;
+        }}
+      }}
+      return candidate;
     }}
 
     function createConfetti() {{
@@ -663,97 +977,189 @@ def build_app_html(*, response_submitted: bool, submitted_answer: str | None) ->
         const c = document.createElement("div");
         c.className = "confetti";
         c.style.left = rand(0, 100) + "vw";
-        c.style.top = rand(-14, 5) + "vh";
+        c.style.top = rand(-16, 6) + "vh";
         c.style.background = colors[rand(0, colors.length - 1)];
-        c.style.animationDuration = (2.3 + Math.random() * 2.1) + "s";
+        c.style.animationDuration = (2.3 + Math.random() * 2.2) + "s";
         c.style.setProperty("--x-end", rand(-24, 24) + "vw");
         layer.appendChild(c);
-        setTimeout(() => c.remove(), 4600);
+        setTimeout(() => c.remove(), 5000);
       }}
     }}
 
     function createHearts() {{
       const layer = document.getElementById("heart-layer");
-      for (let i = 0; i < 36; i += 1) {{
+      for (let i = 0; i < 34; i += 1) {{
         const h = document.createElement("div");
         h.className = "heart";
         h.textContent = Math.random() > 0.5 ? "❤️" : "💙";
         h.style.left = rand(4, 96) + "vw";
-        h.style.bottom = rand(-10, 8) + "vh";
-        h.style.animationDelay = (Math.random() * 1.25) + "s";
-        h.style.setProperty("--drift", rand(-9, 9) + "vw");
+        h.style.bottom = rand(-8, 10) + "vh";
+        h.style.animationDelay = (Math.random() * 1.2) + "s";
+        h.style.setProperty("--drift", rand(-10, 10) + "vw");
         layer.appendChild(h);
-        setTimeout(() => h.remove(), 5100);
+        setTimeout(() => h.remove(), 5200);
       }}
     }}
 
-    function moveNoButton() {{
-      if (!noBtn || noBtn.disabled) return;
+    function createWebBursts() {{
+      const layer = document.getElementById("webburst-layer");
+      for (let i = 0; i < 16; i += 1) {{
+        const w = document.createElement("div");
+        w.className = "webburst";
+        w.style.left = rand(5, 95) + "vw";
+        w.style.top = rand(8, 88) + "vh";
+        w.style.animationDelay = (Math.random() * 0.8) + "s";
+        layer.appendChild(w);
+        setTimeout(() => w.remove(), 1400);
+      }}
+    }}
 
-      const zoneRect = zone.getBoundingClientRect();
-      const btnRect = noBtn.getBoundingClientRect();
-      const maxX = Math.max(8, zoneRect.width - btnRect.width - 8);
-      const maxY = Math.max(8, zoneRect.height - btnRect.height - 8);
-      const x = rand(8, Math.floor(maxX));
-      const y = rand(8, Math.floor(maxY));
+    function celebrate() {{
+      celebratePanel.style.display = "block";
+      answerTag.style.display = "inline-flex";
+      createConfetti();
+      createHearts();
+      createWebBursts();
+      setFrameHeight();
+    }}
 
-      noBtn.style.left = x + "px";
-      noBtn.style.top = y + "px";
-      noBtn.style.right = "auto";
-      noBtn.style.transform = "none";
+    function hideButtonsAfterYes() {{
+      yesBtn.style.display = "none";
+      noBtn.style.display = "none";
+      attemptsNode.style.display = "none";
+      statusNode.textContent = "";
+    }}
 
-      noBtn.classList.remove("runaway");
+    function growYesSlightly() {{
+      yesScale = Math.min(1.9, yesScale + 0.05);
+      applyYesScale();
+    }}
+
+    function teleportNo() {{
+      if (submitted || yesDispatched) return;
+
+      const spot = chooseSafePosition();
+      const rotate = rand(-15, 15);
+      noBtn.style.left = `${{spot.x}}px`;
+      noBtn.style.top = `${{spot.y}}px`;
+      noBtn.style.transform = `rotate(${{rotate}}deg)`;
+      noBtn.classList.remove("zap");
       void noBtn.offsetWidth;
-      noBtn.classList.add("runaway");
+      noBtn.classList.add("zap");
+
+      escapeAttempts += 1;
+      updateAttemptsLabel();
+      growYesSlightly();
       statusNode.textContent = playful[rand(0, playful.length - 1)];
     }}
 
-    function submitAnswer(answerValue) {{
-      const url = new URL(window.location.href);
-      url.searchParams.set("answer", answerValue);
-      window.location.href = url.toString();
+    function maybeEscapeFromPointer(event) {{
+      if (submitted || yesDispatched) return;
+      const ex = event.clientX;
+      const ey = event.clientY;
+      if (typeof ex !== "number" || typeof ey !== "number") return;
+
+      const rect = noBtn.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const dx = ex - cx;
+      const dy = ey - cy;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      const triggerRadius = Math.max(95, rect.width * 0.9);
+      if (distance < triggerRadius) {{
+        teleportNo();
+      }}
     }}
 
-    if (!submitted) {{
-      yesBtn?.addEventListener("click", (event) => {{
-        event.preventDefault();
-        yesBtn.disabled = true;
-        noBtn.disabled = true;
-        statusNode.textContent = "Heroic choice unlocked!";
-        celebratePanel.style.display = "block";
-        createConfetti();
-        createHearts();
-        setTimeout(() => submitAnswer("yes"), 850);
+    function sendProgress() {{
+      if (submitted || yesDispatched) return;
+      sendValue({{
+        type: "progress",
+        attempts: escapeAttempts,
+        yes_scale: yesScale,
+        nonce: Date.now()
       }});
+    }}
 
-      ["mouseenter", "touchstart", "pointerdown", "click"].forEach((evtName) => {{
-        noBtn?.addEventListener(evtName, (event) => {{
+    function submitYes() {{
+      if (submitted || yesDispatched) return;
+      yesDispatched = true;
+      hideButtonsAfterYes();
+      celebrate();
+      sendValue({{
+        type: "yes",
+        attempts: escapeAttempts,
+        yes_scale: yesScale,
+        nonce: Date.now()
+      }});
+    }}
+
+    function resetNoWithinBounds() {{
+      const spot = chooseSafePosition();
+      noBtn.style.left = `${{spot.x}}px`;
+      noBtn.style.top = `${{spot.y}}px`;
+      noBtn.style.transform = `rotate(${{rand(-10, 10)}}deg)`;
+    }}
+
+    function bindNoEscapes() {{
+      const fastEvents = ["mouseenter", "mousedown", "pointerdown", "touchstart", "click"];
+      fastEvents.forEach((name) => {{
+        noBtn.addEventListener(name, (event) => {{
           event.preventDefault();
-          moveNoButton();
+          teleportNo();
         }}, {{ passive: false }});
       }});
 
-      // Extra guard: keyboard activation also never submits "No".
-      noBtn?.addEventListener("keydown", (event) => {{
+      arena.addEventListener("pointermove", maybeEscapeFromPointer, {{ passive: true }});
+      arena.addEventListener("mousemove", maybeEscapeFromPointer, {{ passive: true }});
+
+      arena.addEventListener("touchmove", (event) => {{
+        if (!event.touches || !event.touches.length) return;
+        const touch = event.touches[0];
+        maybeEscapeFromPointer({{ clientX: touch.clientX, clientY: touch.clientY }});
+      }}, {{ passive: true }});
+
+      noBtn.addEventListener("keydown", (event) => {{
         if (event.key === "Enter" || event.key === " ") {{
           event.preventDefault();
-          moveNoButton();
+          teleportNo();
         }}
       }});
-    }} else {{
-      yesBtn.disabled = true;
-      noBtn.disabled = true;
-      yesBtn.style.opacity = "0.65";
-      noBtn.style.opacity = "0.45";
-
-      if (answer === "yes") {{
-        celebratePanel.style.display = "block";
-        createConfetti();
-        createHearts();
-      }} else if (answer === "no") {{
-        statusNode.textContent = "Response received.";
-      }}
     }}
+
+    function initialize() {{
+      applyYesScale();
+      updateAttemptsLabel();
+      setFrameHeight();
+
+      window.addEventListener("resize", () => {{
+        resetNoWithinBounds();
+        setFrameHeight();
+      }});
+      window.addEventListener("orientationchange", () => {{
+        setTimeout(() => {{
+          resetNoWithinBounds();
+          setFrameHeight();
+        }}, 120);
+      }});
+
+      if (submitted) {{
+        hideButtonsAfterYes();
+        celebrate();
+        return;
+      }}
+
+      bindNoEscapes();
+      yesBtn.addEventListener("click", (event) => {{
+        event.preventDefault();
+        submitYes();
+      }});
+
+      resetNoWithinBounds();
+      setInterval(sendProgress, 2200);
+    }}
+
+    initialize();
   </script>
 </body>
 </html>
@@ -762,37 +1168,26 @@ def build_app_html(*, response_submitted: bool, submitted_answer: str | None) ->
 
 def main() -> None:
     init_session_state()
-    process_submission_if_needed()
+    inject_base_page_css()
 
-    st.markdown(
-        """
-        <style>
-          .stAppHeader, [data-testid="stToolbar"], [data-testid="stDecoration"], #MainMenu, footer {
-            visibility: hidden;
-            height: 0;
-            position: fixed;
-          }
-          .block-container {
-            max-width: 100% !important;
-            padding: 0 !important;
-          }
-          iframe {
-            border: 0 !important;
-          }
-        </style>
-        """,
-        unsafe_allow_html=True,
+    if not st.session_state.name_submitted:
+        render_name_entry_card()
+        return
+
+    safe_name = html.escape(str(st.session_state.visitor_name), quote=True)
+    component_value = components.html(
+        build_invitation_html(
+            safe_visitor_name=safe_name,
+            response_submitted=bool(st.session_state.response_submitted),
+            submitted_answer=str(st.session_state.submitted_answer),
+            email_sent=bool(st.session_state.email_sent),
+            no_escape_count=int(st.session_state.no_escape_count),
+            yes_scale=float(st.session_state.yes_scale),
+        ),
+        height=960,
+        scrolling=False,
     )
-
-    app_html = build_app_html(
-        response_submitted=st.session_state.response_submitted,
-        submitted_answer=st.session_state.submitted_answer,
-    )
-    components.html(app_html, height=980, scrolling=False)
-
-    # Keep recipient feedback friendly and private.
-    if st.session_state.response_submitted and not st.session_state.email_sent:
-        st.info("Your answer was recorded. Notification is being retried safely on the next fresh response session.")
+    process_component_event(component_value)
 
 
 if __name__ == "__main__":
