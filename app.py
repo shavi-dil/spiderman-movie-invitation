@@ -87,18 +87,13 @@ def inject_base_page_css() -> None:
           iframe {
             border: 0 !important;
           }
-          .invite-board-shell {
-            position: relative;
-            width: min(930px, 100%);
-            margin: 0 auto;
-          }
+
+          /* Real Streamlit Yes button, visually placed over the iframe arena. */
           .main-yes-anchor {
-            position: absolute;
-            z-index: 90;
-            width: clamp(180px, 30vw, 240px);
-            top: clamp(610px, 73%, 715px);
-            left: clamp(345px, 61%, 565px);
-            transform: translate(-50%, -50%);
+            position: relative;
+            z-index: 9999;
+            width: min(230px, 42vw);
+            margin: -355px 0 0 max(24px, calc((100vw - min(930px, 100vw)) / 2 + 46px));
             pointer-events: auto !important;
           }
           .main-yes-anchor div[data-testid="stButton"] {
@@ -106,21 +101,21 @@ def inject_base_page_css() -> None:
           }
           .main-yes-anchor div[data-testid="stButton"] button {
             width: 100% !important;
-            min-height: clamp(64px, 9vw, 76px) !important;
+            min-height: 66px !important;
             border-radius: 14px !important;
-            border: 1px solid rgba(255, 255, 255, 0.3) !important;
-            color: #ffffff !important;
-            font-size: clamp(1.15rem, 4vw, 1.45rem) !important;
+            border: 1px solid rgba(255,255,255,.3) !important;
+            background: linear-gradient(130deg,#f14f60,#df3042) !important;
+            color: #fff !important;
+            font-size: clamp(1.1rem,3.5vw,1.35rem) !important;
             font-weight: 900 !important;
-            line-height: 1 !important;
-            background: linear-gradient(130deg, #f14f60, #df3042) !important;
-            box-shadow: 0 10px 24px rgba(223, 48, 66, 0.42) !important;
+            box-shadow: 0 10px 24px rgba(223,48,66,.42) !important;
+            cursor: pointer !important;
           }
           @media (max-width: 760px) {
             .main-yes-anchor {
-              width: clamp(170px, 46vw, 220px);
-              top: clamp(610px, 74%, 730px);
-              left: clamp(130px, 43vw, 300px);
+              width: min(220px, 58vw);
+              margin-top: -370px;
+              margin-left: 26px;
             }
           }
         </style>
@@ -442,7 +437,6 @@ def process_component_event(event_payload: object) -> None:
         st.session_state.yes_scale = max(float(st.session_state.yes_scale), yes_scale)
         return
 
-    # YES submission is handled by the real Streamlit button in Python.
     return
 
 
@@ -793,6 +787,31 @@ def build_invitation_html(
       cursor: pointer;
     }}
 
+    .yes-btn {{
+      left: clamp(10px, 2vw, 20px);
+      bottom: clamp(10px, 2vw, 18px);
+      background: linear-gradient(130deg, #f14f60, #df3042);
+      box-shadow: 0 10px 24px rgba(223, 48, 66, 0.42);
+      transform: scale(var(--yes-scale));
+      transform-origin: left bottom;
+      transition: transform 190ms ease, filter 190ms ease, box-shadow 190ms ease;
+      z-index: 3;
+    }}
+
+    .yes-btn.pulse {{
+      animation: yesPulse 280ms ease;
+    }}
+
+    @keyframes yesPulse {{
+      0% {{ transform: scale(calc(var(--yes-scale) * 0.97)); }}
+      45% {{ transform: scale(calc(var(--yes-scale) * 1.04)); }}
+      100% {{ transform: scale(var(--yes-scale)); }}
+    }}
+
+    .yes-btn:hover {{
+      filter: brightness(1.05);
+    }}
+
     .no-btn {{
       left: 70%;
       top: 45%;
@@ -1060,6 +1079,10 @@ def build_invitation_html(
       }}
     }}
 
+    function applyYesScale() {{
+      document.documentElement.style.setProperty("--yes-scale", String(yesScale));
+    }}
+
     function updateAttemptsLabel() {{
       attemptsNode.textContent = `Escape attempts: ${{escapeAttempts}}`;
     }}
@@ -1177,6 +1200,7 @@ def build_invitation_html(
 
     function growYesSlightly() {{
       yesScale = Math.min(1.9, yesScale + 0.05);
+      applyYesScale();
     }}
 
     function teleportNo() {{
@@ -1259,7 +1283,7 @@ def build_invitation_html(
     }}
 
     function initialize() {{
-      document.documentElement.style.setProperty("--yes-scale", String(yesScale));
+      applyYesScale();
       updateAttemptsLabel();
       setFrameHeight();
 
@@ -1308,7 +1332,6 @@ def main() -> None:
     return
 
   safe_name = html.escape(str(st.session_state.visitor_name), quote=True)
-  st.markdown('<div class="invite-board-shell">', unsafe_allow_html=True)
   component_value = components.html(
     build_invitation_html(
       safe_visitor_name=safe_name,
@@ -1333,33 +1356,12 @@ def main() -> None:
     )
     st.markdown('</div>', unsafe_allow_html=True)
 
-  st.markdown('</div>', unsafe_allow_html=True)
-
   if yes_clicked and not st.session_state.response_submitted:
-    webhook_success = False
-
-    if not st.session_state.yes_notification_sent:
-      webhook_success = notify_backend(
-        st.session_state.visitor_name,
-        "YES",
-      )
-
-      if webhook_success:
-        st.session_state.yes_notification_sent = True
-    else:
-      webhook_success = True
-
-    st.session_state.webhook_success = webhook_success
-
-    logged, save_error = log_yes_response_json(st.session_state.visitor_name)
-    st.session_state.json_logged = logged
-    st.session_state.last_save_error = save_error
-
-    if not st.session_state.email_sent:
-      st.session_state.email_sent = send_yes_email(st.session_state.visitor_name)
-
-    st.session_state.response_submitted = True
-    st.session_state.submitted_answer = "YES"
+    submit_yes_response(
+      st.session_state.visitor_name,
+      attempts=int(st.session_state.no_escape_count),
+      yes_scale=float(st.session_state.yes_scale),
+    )
     st.rerun()
 
   if st.session_state.response_submitted:
