@@ -46,6 +46,12 @@ def init_session_state() -> None:
     if "yes_scale" not in st.session_state:
         st.session_state.yes_scale = 1.0
 
+    if "json_logged" not in st.session_state:
+      st.session_state.json_logged = False
+
+    if "last_save_error" not in st.session_state:
+      st.session_state.last_save_error = ""
+
 
 def inject_base_page_css() -> None:
     """Hide default Streamlit chrome and keep iframe edge to edge."""
@@ -296,7 +302,7 @@ def send_yes_email(visitor_name: str) -> bool:
         return False
 
 
-def log_yes_response_json(visitor_name: str) -> bool:
+def log_yes_response_json(visitor_name: str) -> tuple[bool, str]:
     """Append a YES response record to a local JSONL file."""
     payload = {
         "name": visitor_name,
@@ -309,10 +315,10 @@ def log_yes_response_json(visitor_name: str) -> bool:
         RESPONSE_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
         with RESPONSE_LOG_FILE.open("a", encoding="utf-8") as file:
             file.write(json.dumps(payload, ensure_ascii=False) + "\n")
-        return True
+        return True, ""
     except Exception as exc:  # pragma: no cover
         LOGGER.warning("JSON response logging failed safely. Error type: %s", type(exc).__name__)
-        return False
+        return False, f"{type(exc).__name__}: {exc}"
 
 
 def clamp_yes_scale(value: float) -> float:
@@ -331,7 +337,9 @@ def submit_yes_response(visitor_name: str, *, attempts: int, yes_scale: float) -
   st.session_state.submitted_answer = "YES"
 
   # Keep a temporary local record for each successful YES action.
-  log_yes_response_json(visitor_name)
+  logged, save_error = log_yes_response_json(visitor_name)
+  st.session_state.json_logged = logged
+  st.session_state.last_save_error = save_error
 
   # Send email once per session only.
   if not st.session_state.email_sent:
@@ -371,6 +379,16 @@ def process_component_event(event_payload: object) -> None:
       yes_scale=yes_scale,
     )
     st.rerun()
+
+
+def retry_save_yes_response() -> None:
+    """Retry writing a YES response when the first save attempt failed."""
+    if not st.session_state.response_submitted or st.session_state.json_logged:
+        return
+
+    logged, save_error = log_yes_response_json(st.session_state.visitor_name)
+    st.session_state.json_logged = logged
+    st.session_state.last_save_error = save_error
 
 
 def build_invitation_html(
@@ -1283,6 +1301,14 @@ def main() -> None:
   )
 
   if not st.session_state.response_submitted:
+    if st.button("Save Yes ❤️", use_container_width=True, type="primary"):
+      submit_yes_response(
+        st.session_state.visitor_name,
+        attempts=int(st.session_state.no_escape_count),
+        yes_scale=float(st.session_state.yes_scale),
+      )
+      st.rerun()
+
     st.info("If the animated Yes click does not sync, tap Confirm Yes below.")
     if st.button("Confirm Yes ❤️", use_container_width=True, type="primary"):
       submit_yes_response(
@@ -1291,6 +1317,18 @@ def main() -> None:
         yes_scale=float(st.session_state.yes_scale),
       )
       st.rerun()
+
+  if st.session_state.response_submitted:
+    if st.session_state.json_logged:
+      st.success(f"Saved to {RESPONSE_LOG_FILE}")
+    else:
+      st.error(
+        "Could not save to JSON file. "
+        f"Details: {st.session_state.last_save_error or 'Unknown error'}"
+      )
+      if st.button("Retry Save", use_container_width=True):
+        retry_save_yes_response()
+        st.rerun()
 
   process_component_event(component_value)
 
