@@ -87,35 +87,6 @@ def inject_base_page_css() -> None:
           iframe {
             border: 0 !important;
           }
-          .main-yes-anchor {
-            position: relative;
-            z-index: 90;
-            width: clamp(180px, 30vw, 240px);
-            margin-top: -238px;
-            margin-left: clamp(120px, 36vw, 430px);
-            pointer-events: auto !important;
-          }
-          .main-yes-anchor div[data-testid="stButton"] {
-            margin: 0 !important;
-          }
-          .main-yes-anchor div[data-testid="stButton"] button {
-            width: 100% !important;
-            min-height: clamp(64px, 9vw, 76px) !important;
-            border-radius: 14px !important;
-            border: 1px solid rgba(255, 255, 255, 0.3) !important;
-            color: #ffffff !important;
-            font-size: clamp(1.15rem, 4vw, 1.45rem) !important;
-            font-weight: 900 !important;
-            line-height: 1 !important;
-            background: linear-gradient(130deg, #f14f60, #df3042) !important;
-            box-shadow: 0 10px 24px rgba(223, 48, 66, 0.42) !important;
-          }
-          @media (max-width: 760px) {
-            .main-yes-anchor {
-              margin-top: -224px;
-              margin-left: clamp(16px, 30vw, 150px);
-            }
-          }
         </style>
         """,
         unsafe_allow_html=True,
@@ -435,8 +406,15 @@ def process_component_event(event_payload: object) -> None:
         st.session_state.yes_scale = max(float(st.session_state.yes_scale), yes_scale)
         return
 
-    # YES submission is handled by the real Streamlit button in Python.
-    return
+    if event_type != "yes" or st.session_state.response_submitted:
+      return
+
+    submit_yes_response(
+      st.session_state.visitor_name,
+      attempts=attempts,
+      yes_scale=yes_scale,
+    )
+    st.rerun()
 
 
 def retry_save_yes_response() -> None:
@@ -786,6 +764,31 @@ def build_invitation_html(
       cursor: pointer;
     }}
 
+    .yes-btn {{
+      left: clamp(10px, 2vw, 20px);
+      bottom: clamp(10px, 2vw, 18px);
+      background: linear-gradient(130deg, #f14f60, #df3042);
+      box-shadow: 0 10px 24px rgba(223, 48, 66, 0.42);
+      transform: scale(var(--yes-scale));
+      transform-origin: left bottom;
+      transition: transform 190ms ease, filter 190ms ease, box-shadow 190ms ease;
+      z-index: 3;
+    }}
+
+    .yes-btn.pulse {{
+      animation: yesPulse 280ms ease;
+    }}
+
+    @keyframes yesPulse {{
+      0% {{ transform: scale(calc(var(--yes-scale) * 0.97)); }}
+      45% {{ transform: scale(calc(var(--yes-scale) * 1.04)); }}
+      100% {{ transform: scale(var(--yes-scale)); }}
+    }}
+
+    .yes-btn:hover {{
+      filter: brightness(1.05);
+    }}
+
     .no-btn {{
       left: 70%;
       top: 45%;
@@ -989,6 +992,7 @@ def build_invitation_html(
       <div class="status" id="status"></div>
 
       <div class="arena" id="arena">
+        <button class="action-btn yes-btn" id="yes-btn" aria-label="Yes">Yes ❤️</button>
         <button class="action-btn no-btn" id="no-btn" aria-label="No">No 🕸️</button>
         <div class="attempts" id="attempts">Escape attempts: {no_escape_count}</div>
       </div>
@@ -1010,6 +1014,7 @@ def build_invitation_html(
   <script>
     const stage = document.getElementById("stage");
     const statusNode = document.getElementById("status");
+    const yesBtn = document.getElementById("yes-btn");
     const noBtn = document.getElementById("no-btn");
     const arena = document.getElementById("arena");
     const bubble = document.getElementById("bubble");
@@ -1021,6 +1026,7 @@ def build_invitation_html(
     const initScale = Number(stage.dataset.initScale || "1") || 1;
     let yesScale = Math.max(1, Math.min(1.9, initScale));
     let escapeAttempts = Number(stage.dataset.initAttempts || "0") || 0;
+    let yesDispatched = false;
 
     const playful = [
       "Nice try 😏",
@@ -1051,6 +1057,13 @@ def build_invitation_html(
       }} else {{
         window.parent.postMessage({{ isStreamlitMessage: true, type: "streamlit:setComponentValue", value: payload }}, "*");
       }}
+    }}
+
+    function applyYesScale() {{
+      document.documentElement.style.setProperty("--yes-scale", String(yesScale));
+      yesBtn.classList.remove("pulse");
+      void yesBtn.offsetWidth;
+      yesBtn.classList.add("pulse");
     }}
 
     function updateAttemptsLabel() {{
@@ -1087,6 +1100,7 @@ def build_invitation_html(
       const maxX = Math.max(minX, arenaRect.width - noW - pad);
       const maxY = Math.max(minY, arenaRect.height - noH - pad);
 
+      const yesRect = inflatedRect(yesBtn.getBoundingClientRect(), 8);
       const bubbleRect = inflatedRect(bubble.getBoundingClientRect(), 6);
 
       let candidate = {{ x: rand(minX, Math.floor(maxX)), y: rand(minY, Math.floor(maxY)) }};
@@ -1100,7 +1114,7 @@ def build_invitation_html(
           bottom: arenaRect.top + y + noH
         }};
 
-        const collides = overlaps(projected, bubbleRect);
+        const collides = overlaps(projected, yesRect) || overlaps(projected, bubbleRect);
         if (!collides) {{
           candidate = {{ x, y }};
           break;
@@ -1163,6 +1177,7 @@ def build_invitation_html(
     }}
 
     function hideButtonsAfterYes() {{
+      yesBtn.style.display = "none";
       noBtn.style.display = "none";
       attemptsNode.style.display = "none";
       statusNode.textContent = "";
@@ -1170,10 +1185,11 @@ def build_invitation_html(
 
     function growYesSlightly() {{
       yesScale = Math.min(1.9, yesScale + 0.05);
+      applyYesScale();
     }}
 
     function teleportNo() {{
-      if (submitted) return;
+      if (submitted || yesDispatched) return;
 
       const spot = chooseSafePosition();
       const rotate = rand(-15, 15);
@@ -1191,7 +1207,7 @@ def build_invitation_html(
     }}
 
     function maybeEscapeFromPointer(event) {{
-      if (submitted) return;
+      if (submitted || yesDispatched) return;
       const ex = event.clientX;
       const ey = event.clientY;
       if (typeof ex !== "number" || typeof ey !== "number") return;
@@ -1209,9 +1225,23 @@ def build_invitation_html(
     }}
 
     function sendProgress() {{
-      if (submitted) return;
+      if (submitted || yesDispatched) return;
       sendValue({{
         type: "progress",
+        attempts: escapeAttempts,
+        yes_scale: yesScale,
+        nonce: Date.now()
+      }});
+    }}
+
+    function submitYes() {{
+      if (submitted || yesDispatched) return;
+      yesDispatched = true;
+      yesBtn.disabled = true;
+      noBtn.disabled = true;
+      statusNode.textContent = "Submitting your YES...";
+      sendValue({{
+        type: "yes",
         attempts: escapeAttempts,
         yes_scale: yesScale,
         nonce: Date.now()
@@ -1252,7 +1282,7 @@ def build_invitation_html(
     }}
 
     function initialize() {{
-      document.documentElement.style.setProperty("--yes-scale", String(yesScale));
+      applyYesScale();
       updateAttemptsLabel();
       setFrameHeight();
 
@@ -1274,6 +1304,10 @@ def build_invitation_html(
       }}
 
       bindNoEscapes();
+      yesBtn.addEventListener("click", (event) => {{
+        event.preventDefault();
+        submitYes();
+      }});
 
       resetNoWithinBounds();
       setInterval(sendProgress, 2200);
@@ -1313,44 +1347,6 @@ def main() -> None:
     height=960,
     scrolling=False,
   )
-
-  yes_clicked = False
-  if not st.session_state.response_submitted:
-    st.markdown('<div class="main-yes-anchor">', unsafe_allow_html=True)
-    yes_clicked = st.button(
-      "Yes ❤️",
-      key="main_yes_button",
-      use_container_width=True,
-      type="primary",
-    )
-    st.markdown('</div>', unsafe_allow_html=True)
-
-  if yes_clicked and not st.session_state.response_submitted:
-    webhook_success = False
-
-    if not st.session_state.yes_notification_sent:
-      webhook_success = notify_backend(
-        st.session_state.visitor_name,
-        "YES",
-      )
-
-      if webhook_success:
-        st.session_state.yes_notification_sent = True
-    else:
-      webhook_success = True
-
-    st.session_state.webhook_success = webhook_success
-
-    logged, save_error = log_yes_response_json(st.session_state.visitor_name)
-    st.session_state.json_logged = logged
-    st.session_state.last_save_error = save_error
-
-    if not st.session_state.email_sent:
-      st.session_state.email_sent = send_yes_email(st.session_state.visitor_name)
-
-    st.session_state.response_submitted = True
-    st.session_state.submitted_answer = "YES"
-    st.rerun()
 
   if st.session_state.response_submitted:
     if not st.session_state.yes_notification_sent:
