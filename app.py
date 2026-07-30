@@ -306,7 +306,7 @@ def log_yes_response_json(visitor_name: str) -> bool:
     }
 
     try:
-      RESPONSE_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        RESPONSE_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
         with RESPONSE_LOG_FILE.open("a", encoding="utf-8") as file:
             file.write(json.dumps(payload, ensure_ascii=False) + "\n")
         return True
