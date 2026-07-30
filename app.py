@@ -91,9 +91,8 @@ def inject_base_page_css() -> None:
             position: relative;
             z-index: 90;
             width: clamp(180px, 30vw, 240px);
-            margin-top: -156px;
-            margin-left: clamp(300px, 55vw, 720px);
-            margin-bottom: 88px;
+            margin-top: -238px;
+            margin-left: clamp(120px, 36vw, 430px);
             pointer-events: auto !important;
           }
           .main-yes-anchor div[data-testid="stButton"] {
@@ -113,10 +112,8 @@ def inject_base_page_css() -> None:
           }
           @media (max-width: 760px) {
             .main-yes-anchor {
-              width: clamp(170px, 46vw, 220px);
-              margin-top: -170px;
-              margin-left: clamp(150px, 52vw, 320px);
-              margin-bottom: 100px;
+              margin-top: -224px;
+              margin-left: clamp(16px, 30vw, 150px);
             }
           }
         </style>
