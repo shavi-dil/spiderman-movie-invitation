@@ -19,7 +19,8 @@ MELBOURNE_TZ = ZoneInfo("Australia/Melbourne")
 MAX_NAME_LENGTH = 40
 YES_SCALE_MIN = 1.0
 YES_SCALE_MAX = 1.9
-RESPONSE_LOG_FILE = Path("yes_responses.jsonl")
+APP_DIR = Path(__file__).resolve().parent
+RESPONSE_LOG_FILE = APP_DIR / "yes_responses.jsonl"
 
 
 def init_session_state() -> None:
@@ -305,6 +306,7 @@ def log_yes_response_json(visitor_name: str) -> bool:
     }
 
     try:
+      RESPONSE_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
         with RESPONSE_LOG_FILE.open("a", encoding="utf-8") as file:
             file.write(json.dumps(payload, ensure_ascii=False) + "\n")
         return True
