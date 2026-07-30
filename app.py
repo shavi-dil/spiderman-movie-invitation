@@ -60,6 +60,9 @@ def init_session_state() -> None:
     if "yes_notification_attempted" not in st.session_state:
       st.session_state.yes_notification_attempted = False
 
+    if "webhook_success" not in st.session_state:
+      st.session_state.webhook_success = False
+
 
 def inject_base_page_css() -> None:
     """Hide default Streamlit chrome and keep iframe edge to edge."""
@@ -320,8 +323,9 @@ def notify_backend(visitor_name: str, answer: str) -> bool:
 
   try:
     response = requests.post(YES_WEBHOOK_URL, json=payload, timeout=10)
-    response.raise_for_status()
-    return True
+    status = int(response.status_code)
+    LOGGER.info("YES webhook status: %s", status)
+    return 200 <= status < 300
   except Exception as exc:  # pragma: no cover
     LOGGER.warning("YES webhook send failed safely. Error type: %s", type(exc).__name__)
     print(f"YES webhook send failed safely: {type(exc).__name__}")
@@ -402,15 +406,8 @@ def process_component_event(event_payload: object) -> None:
         st.session_state.yes_scale = max(float(st.session_state.yes_scale), yes_scale)
         return
 
-    if event_type != "yes":
-        return
-
-    submit_yes_response(
-      st.session_state.visitor_name,
-      attempts=attempts,
-      yes_scale=yes_scale,
-    )
-    st.rerun()
+    # YES submission is handled by the real Streamlit button in Python.
+    return
 
 
 def retry_save_yes_response() -> None:
@@ -421,6 +418,17 @@ def retry_save_yes_response() -> None:
     logged, save_error = log_yes_response_json(st.session_state.visitor_name)
     st.session_state.json_logged = logged
     st.session_state.last_save_error = save_error
+
+
+def retry_notification() -> None:
+    """Retry webhook notification only when the previous attempt failed."""
+    if st.session_state.yes_notification_sent:
+        return
+
+    success = notify_backend(st.session_state.visitor_name, "YES")
+    st.session_state.webhook_success = success
+    if success:
+        st.session_state.yes_notification_sent = True
 
 
 def build_invitation_html(
@@ -758,6 +766,7 @@ def build_invitation_html(
       transform-origin: left bottom;
       transition: transform 190ms ease, filter 190ms ease, box-shadow 190ms ease;
       z-index: 3;
+      pointer-events: none;
     }}
 
     .yes-btn.pulse {{
@@ -1225,12 +1234,7 @@ def build_invitation_html(
       yesBtn.disabled = true;
       noBtn.disabled = true;
       statusNode.textContent = "Submitting your YES...";
-      sendValue({{
-        type: "yes",
-        attempts: escapeAttempts,
-        yes_scale: yesScale,
-        nonce: Date.now()
-      }});
+      // Real YES submission is handled by Streamlit Python button.
     }}
 
     function resetNoWithinBounds() {{
@@ -1289,10 +1293,6 @@ def build_invitation_html(
       }}
 
       bindNoEscapes();
-      yesBtn.addEventListener("click", (event) => {{
-        event.preventDefault();
-        submitYes();
-      }});
 
       resetNoWithinBounds();
       setInterval(sendProgress, 2200);
@@ -1333,7 +1333,48 @@ def main() -> None:
     scrolling=False,
   )
 
+  yes_clicked = False
+  if not st.session_state.response_submitted:
+    yes_clicked = st.button(
+      "Yes ❤️",
+      key="main_yes_button",
+      use_container_width=True,
+    )
+
+  if yes_clicked and not st.session_state.response_submitted:
+    webhook_success = False
+
+    if not st.session_state.yes_notification_sent:
+      webhook_success = notify_backend(
+        st.session_state.visitor_name,
+        "YES",
+      )
+
+      if webhook_success:
+        st.session_state.yes_notification_sent = True
+    else:
+      webhook_success = True
+
+    st.session_state.webhook_success = webhook_success
+
+    logged, save_error = log_yes_response_json(st.session_state.visitor_name)
+    st.session_state.json_logged = logged
+    st.session_state.last_save_error = save_error
+
+    if not st.session_state.email_sent:
+      st.session_state.email_sent = send_yes_email(st.session_state.visitor_name)
+
+    st.session_state.response_submitted = True
+    st.session_state.submitted_answer = "YES"
+    st.rerun()
+
   if st.session_state.response_submitted:
+    if not st.session_state.yes_notification_sent:
+      st.warning("Webhook notification failed. You can retry.")
+      if st.button("Retry notification", use_container_width=True):
+        retry_notification()
+        st.rerun()
+
     if st.session_state.json_logged:
       st.success(f"Saved to {RESPONSE_LOG_FILE}")
     else:
@@ -1341,9 +1382,6 @@ def main() -> None:
         "Could not save to JSON file. "
         f"Details: {st.session_state.last_save_error or 'Unknown error'}"
       )
-      if st.button("Retry Save", use_container_width=True):
-        retry_save_yes_response()
-        st.rerun()
 
   process_component_event(component_value)
 
