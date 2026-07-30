@@ -1222,8 +1222,9 @@ def build_invitation_html(
     function submitYes() {{
       if (submitted || yesDispatched) return;
       yesDispatched = true;
-      hideButtonsAfterYes();
-      celebrate();
+      yesBtn.disabled = true;
+      noBtn.disabled = true;
+      statusNode.textContent = "Submitting your YES...";
       sendValue({{
         type: "yes",
         attempts: escapeAttempts,
