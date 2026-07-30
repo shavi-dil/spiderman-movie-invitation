@@ -90,9 +90,9 @@ def inject_base_page_css() -> None:
           .main-yes-anchor {
             position: relative;
             z-index: 90;
-            width: clamp(130px, 26vw, 170px);
-            margin-top: -152px;
-            margin-left: clamp(16px, 2.2vw, 24px);
+            width: clamp(180px, 30vw, 240px);
+            margin-top: -156px;
+            margin-left: clamp(300px, 55vw, 720px);
             margin-bottom: 88px;
             pointer-events: auto !important;
           }
@@ -101,11 +101,11 @@ def inject_base_page_css() -> None:
           }
           .main-yes-anchor div[data-testid="stButton"] button {
             width: 100% !important;
-            min-height: clamp(52px, 8vw, 60px) !important;
+            min-height: clamp(64px, 9vw, 76px) !important;
             border-radius: 14px !important;
             border: 1px solid rgba(255, 255, 255, 0.3) !important;
             color: #ffffff !important;
-            font-size: clamp(1.02rem, 3.5vw, 1.25rem) !important;
+            font-size: clamp(1.15rem, 4vw, 1.45rem) !important;
             font-weight: 900 !important;
             line-height: 1 !important;
             background: linear-gradient(130deg, #f14f60, #df3042) !important;
@@ -113,8 +113,9 @@ def inject_base_page_css() -> None:
           }
           @media (max-width: 760px) {
             .main-yes-anchor {
-              margin-top: -168px;
-              margin-left: 12px;
+              width: clamp(170px, 46vw, 220px);
+              margin-top: -170px;
+              margin-left: clamp(150px, 52vw, 320px);
               margin-bottom: 100px;
             }
           }
