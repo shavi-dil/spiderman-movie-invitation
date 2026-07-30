@@ -7,6 +7,7 @@ import smtplib
 from datetime import datetime
 from email.message import EmailMessage
 from pathlib import Path
+from urllib import error, request
 from zoneinfo import ZoneInfo
 
 import streamlit as st
@@ -51,6 +52,12 @@ def init_session_state() -> None:
 
     if "last_save_error" not in st.session_state:
       st.session_state.last_save_error = ""
+
+    if "backend_notified" not in st.session_state:
+      st.session_state.backend_notified = False
+
+    if "last_backend_error" not in st.session_state:
+      st.session_state.last_backend_error = ""
 
 
 def inject_base_page_css() -> None:
@@ -302,6 +309,45 @@ def send_yes_email(visitor_name: str) -> bool:
         return False
 
 
+def notify_yes_backend(visitor_name: str, *, attempts: int, yes_scale: float) -> tuple[bool, str]:
+    """Notify a backend webhook when a YES response is submitted."""
+    try:
+        backend_url = str(st.secrets["BACKEND_NOTIFY_URL"]).strip()
+    except Exception:
+        return False, "BACKEND_NOTIFY_URL is missing in Streamlit secrets"
+
+    if not backend_url:
+        return False, "BACKEND_NOTIFY_URL is empty"
+
+    auth_token = str(st.secrets.get("BACKEND_NOTIFY_TOKEN", "")).strip()
+    payload = {
+        "name": visitor_name,
+        "answer": "YES",
+        "response_time_melbourne": datetime.now(MELBOURNE_TZ).isoformat(),
+        "attempts": max(0, attempts),
+        "yes_scale": clamp_yes_scale(yes_scale),
+        "source": "spiderman-invitation-app",
+    }
+
+    body = json.dumps(payload).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    if auth_token:
+        headers["Authorization"] = f"Bearer {auth_token}"
+
+    req = request.Request(backend_url, data=body, headers=headers, method="POST")
+
+    try:
+        with request.urlopen(req, timeout=12) as response:
+            status = int(getattr(response, "status", 0))
+        if 200 <= status < 300:
+            return True, ""
+        return False, f"Unexpected HTTP status: {status}"
+    except error.HTTPError as exc:
+        return False, f"HTTPError {exc.code}: {exc.reason}"
+    except Exception as exc:  # pragma: no cover
+        return False, f"{type(exc).__name__}: {exc}"
+
+
 def log_yes_response_json(visitor_name: str) -> tuple[bool, str]:
     """Append a YES response record to a local JSONL file."""
     payload = {
@@ -340,6 +386,14 @@ def submit_yes_response(visitor_name: str, *, attempts: int, yes_scale: float) -
   logged, save_error = log_yes_response_json(visitor_name)
   st.session_state.json_logged = logged
   st.session_state.last_save_error = save_error
+
+  notified, backend_error = notify_yes_backend(
+    visitor_name,
+    attempts=attempts,
+    yes_scale=yes_scale,
+  )
+  st.session_state.backend_notified = notified
+  st.session_state.last_backend_error = backend_error
 
   # Send email once per session only.
   if not st.session_state.email_sent:
@@ -389,6 +443,20 @@ def retry_save_yes_response() -> None:
     logged, save_error = log_yes_response_json(st.session_state.visitor_name)
     st.session_state.json_logged = logged
     st.session_state.last_save_error = save_error
+
+
+def retry_backend_notify() -> None:
+    """Retry backend webhook notification for YES response."""
+    if not st.session_state.response_submitted or st.session_state.backend_notified:
+        return
+
+    notified, backend_error = notify_yes_backend(
+        st.session_state.visitor_name,
+        attempts=int(st.session_state.no_escape_count),
+        yes_scale=float(st.session_state.yes_scale),
+    )
+    st.session_state.backend_notified = notified
+    st.session_state.last_backend_error = backend_error
 
 
 def build_invitation_html(
@@ -1319,6 +1387,17 @@ def main() -> None:
       st.rerun()
 
   if st.session_state.response_submitted:
+    if st.session_state.backend_notified:
+      st.success("Backend webhook notified for YES click")
+    else:
+      st.warning(
+        "Backend notification failed. "
+        f"Details: {st.session_state.last_backend_error or 'Unknown error'}"
+      )
+      if st.button("Retry Backend Notify", use_container_width=True):
+        retry_backend_notify()
+        st.rerun()
+
     if st.session_state.json_logged:
       st.success(f"Saved to {RESPONSE_LOG_FILE}")
     else:

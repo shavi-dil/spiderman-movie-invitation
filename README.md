@@ -40,8 +40,18 @@ This app is a responsive Spider-Man-inspired invitation built with Streamlit. It
   EMAIL_SENDER = "your-sender-gmail-address@gmail.com"
   EMAIL_RECIPIENT = "shavinijoseph2004@gmail.com"
   EMAIL_APP_PASSWORD = "your-16-character-gmail-app-password"
+  BACKEND_NOTIFY_URL = "https://your-backend.example.com/spiderman/yes"
+  BACKEND_NOTIFY_TOKEN = "optional-shared-bearer-token"
 
 4. Save the file.
+
+## 5.1 Backend webhook notification (recommended)
+
+1. Create an HTTPS POST endpoint in your backend.
+2. Set BACKEND_NOTIFY_URL in Streamlit secrets to that endpoint.
+3. Optionally set BACKEND_NOTIFY_TOKEN and verify it server-side as a Bearer token.
+4. On each Yes click, the app sends JSON with: name, answer, response_time_melbourne, attempts, yes_scale, source.
+5. In the app UI, check for "Backend webhook notified for YES click" after submission.
 
 ## 6. Add secrets in Streamlit Community Cloud
 
