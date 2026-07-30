@@ -21,18 +21,26 @@ YES_SCALE_MAX = 1.9
 
 def init_session_state() -> None:
     """Initialize all session fields used by the app."""
-    defaults: dict[str, object] = {
-        "visitor_name": "",
-        "name_submitted": False,
-        "response_submitted": False,
-        "submitted_answer": "",
-        "email_sent": False,
-        "no_escape_count": 0,
-        "yes_scale": 1.0,
-    }
-    for key, value in defaults.items():
-        if key not in st.session_state:
-            st.session_state[key] = value
+    if "visitor_name" not in st.session_state:
+        st.session_state.visitor_name = ""
+
+    if "name_submitted" not in st.session_state:
+        st.session_state.name_submitted = False
+
+    if "response_submitted" not in st.session_state:
+        st.session_state.response_submitted = False
+
+    if "submitted_answer" not in st.session_state:
+        st.session_state.submitted_answer = ""
+
+    if "email_sent" not in st.session_state:
+        st.session_state.email_sent = False
+
+    if "no_escape_count" not in st.session_state:
+        st.session_state.no_escape_count = 0
+
+    if "yes_scale" not in st.session_state:
+        st.session_state.yes_scale = 1.0
 
 
 def inject_base_page_css() -> None:
@@ -74,29 +82,31 @@ def render_name_entry_card() -> None:
     st.markdown(
         """
         <style>
-          .welcome-stage {
-            min-height: 100dvh;
-            width: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background:
-              radial-gradient(circle at 20% 15%, #203768 0%, #111827 38%, #090d16 80%, #060910 100%);
-            padding: clamp(12px, 3.5vw, 30px);
-            position: relative;
-            overflow: hidden;
+          .welcome-background {
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(circle at 20% 15%, #203768 0%, #111827 38%, #090d16 80%, #060910 100%);
+            z-index: -2;
+            pointer-events: none !important;
           }
-          .welcome-stage::before {
-            content: "";
-            position: absolute;
+          .welcome-pattern {
+            position: fixed;
             inset: 0;
             background-image: radial-gradient(rgba(255, 255, 255, 0.12) 1px, transparent 1px);
             background-size: 14px 14px;
             opacity: 0.24;
-            pointer-events: none;
+            z-index: -1;
+            pointer-events: none !important;
           }
-          .welcome-card {
-            width: min(520px, 100%);
+          .welcome-layout {
+            min-height: 100dvh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: clamp(12px, 3.5vw, 28px);
+          }
+          .welcome-frame {
+            width: min(560px, 100%);
             border-radius: 24px;
             border: 2px solid rgba(255, 255, 255, 0.16);
             background: linear-gradient(155deg, rgba(220, 47, 63, 0.18), rgba(20, 84, 216, 0.2), rgba(8, 12, 20, 0.92));
@@ -105,8 +115,10 @@ def render_name_entry_card() -> None:
             backdrop-filter: blur(3px);
             animation: welcomeEnter 700ms ease;
             position: relative;
+            pointer-events: auto !important;
+            z-index: 20;
           }
-          .welcome-card h1 {
+          .welcome-frame h1 {
             margin: 0 0 10px 0;
             color: #fff4cc;
             line-height: 1.25;
@@ -115,7 +127,7 @@ def render_name_entry_card() -> None:
           .welcome-sub {
             color: #dbe9ff;
             font-weight: 700;
-            margin-bottom: 16px;
+            margin-bottom: 14px;
             font-size: clamp(0.94rem, 2.8vw, 1.02rem);
           }
           @keyframes welcomeEnter {
@@ -132,7 +144,8 @@ def render_name_entry_card() -> None:
             position: absolute;
             width: clamp(70px, 16vw, 115px);
             opacity: 0.35;
-            pointer-events: none;
+            pointer-events: none !important;
+            z-index: 1;
           }
           .welcome-web.wl {
             top: 6px;
@@ -144,22 +157,52 @@ def render_name_entry_card() -> None:
             right: 10px;
             transform: rotate(10deg);
           }
-          div[data-testid="stTextInputRootElement"] label p {
+          .welcome-form-host {
+            margin-top: 14px;
+            position: relative;
+            z-index: 20;
+            pointer-events: auto !important;
+          }
+          div[data-testid="stForm"] {
+            position: relative;
+            z-index: 20;
+            pointer-events: auto !important;
+          }
+          div[data-testid="stTextInput"] {
+            position: relative;
+            z-index: 20;
+            pointer-events: auto !important;
+          }
+          div[data-testid="stTextInput"] label p {
             color: #ffe8a2 !important;
             font-weight: 800 !important;
             letter-spacing: 0.03em;
           }
-          div[data-testid="stTextInputRootElement"] input {
-            background: rgba(255, 255, 255, 0.95) !important;
-            border: 2px solid #123f9f !important;
+          div[data-testid="stTextInput"] input {
+            pointer-events: auto !important;
+            cursor: text !important;
+            color: #ffffff !important;
+            caret-color: #ffffff !important;
+            background: rgba(8, 18, 45, 0.9) !important;
+            border: 2px solid rgba(255, 255, 255, 0.35) !important;
             border-radius: 12px !important;
-            min-height: 50px !important;
             font-size: 1rem !important;
-            color: #171d2a !important;
+            min-height: 48px !important;
+            opacity: 1 !important;
+            visibility: visible !important;
+            display: block !important;
+          }
+          div[data-testid="stTextInput"] input::placeholder {
+            color: rgba(255, 255, 255, 0.72) !important;
+          }
+          div[data-testid="stFormSubmitButton"] {
+            position: relative;
+            z-index: 20;
+            pointer-events: auto !important;
           }
           div[data-testid="stFormSubmitButton"] button {
             width: 100%;
-            min-height: 52px;
+            min-height: 48px;
             border-radius: 14px;
             border: 1px solid rgba(255, 255, 255, 0.28);
             color: white;
@@ -167,37 +210,68 @@ def render_name_entry_card() -> None:
             font-weight: 800;
             background: linear-gradient(130deg, #df3042, #1a59da);
             transition: transform 150ms ease, filter 150ms ease;
+            pointer-events: auto !important;
+            cursor: pointer !important;
           }
           div[data-testid="stFormSubmitButton"] button:hover {
             transform: translateY(-1px);
             filter: brightness(1.06);
           }
+          @media (max-width: 640px) {
+            .welcome-frame {
+              padding: 16px;
+            }
+          }
         </style>
-        <div class="welcome-stage">
-          <div class="welcome-card">
-            <svg class="welcome-web wl" viewBox="0 0 100 100" aria-hidden="true"><path d="M50 5L50 95M5 50L95 50M18 18L82 82M82 18L18 82M10 35C32 44 68 44 90 35M10 65C32 56 68 56 90 65M35 10C44 32 44 68 35 90M65 10C56 32 56 68 65 90" stroke="#cfe7ff" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
-            <svg class="welcome-web wr" viewBox="0 0 100 100" aria-hidden="true"><path d="M50 5L50 95M5 50L95 50M18 18L82 82M82 18L18 82M10 35C32 44 68 44 90 35M10 65C32 56 68 56 90 65M35 10C44 32 44 68 35 90M65 10C56 32 56 68 65 90" stroke="#cfe7ff" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
-            <h1>Enter your name 🕷️</h1>
-            <div class="welcome-sub">Your spider mission starts here.</div>
-          </div>
-        </div>
+        <div class="welcome-background"></div>
+        <div class="welcome-pattern"></div>
         """,
         unsafe_allow_html=True,
     )
 
-    with st.form("name_form", clear_on_submit=False):
-        raw_name = st.text_input("NAME", value=st.session_state.visitor_name, max_chars=MAX_NAME_LENGTH + 6)
-        submitted = st.form_submit_button("Continue 🕸️")
+    left, center, right = st.columns([1, 1.8, 1])
+    with center:
+        st.markdown(
+            """
+            <div class="welcome-layout">
+              <div class="welcome-frame">
+                <svg class="welcome-web wl" viewBox="0 0 100 100" aria-hidden="true"><path d="M50 5L50 95M5 50L95 50M18 18L82 82M82 18L18 82M10 35C32 44 68 44 90 35M10 65C32 56 68 56 90 65M35 10C44 32 44 68 35 90M65 10C56 32 56 68 65 90" stroke="#cfe7ff" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+                <svg class="welcome-web wr" viewBox="0 0 100 100" aria-hidden="true"><path d="M50 5L50 95M5 50L95 50M18 18L82 82M82 18L18 82M10 35C32 44 68 44 90 35M10 65C32 56 68 56 90 65M35 10C44 32 44 68 35 90M65 10C56 32 56 68 65 90" stroke="#cfe7ff" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+                <h1>Enter your name 🕷️</h1>
+                <div class="welcome-sub">Your spider mission starts here.</div>
+                <div class="welcome-form-host">
+            """,
+            unsafe_allow_html=True,
+        )
+
+        with st.form("name_form", clear_on_submit=False):
+            visitor_name = st.text_input(
+                "NAME",
+                placeholder="Type your name here...",
+                key="name_input",
+                max_chars=40,
+            )
+            submitted = st.form_submit_button(
+                "Next 🕷️",
+                use_container_width=True,
+                key="next_button",
+            )
+
+        st.markdown(
+            """
+                </div>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
     if submitted:
-        clean_name = sanitize_name(raw_name)
+        clean_name = visitor_name.strip()
         if not clean_name:
-            st.error("Please enter a name before continuing.")
+            st.error("Please enter your name first 🕷️")
             return
-        if len(clean_name) > MAX_NAME_LENGTH:
-            st.error(f"Please keep the name at {MAX_NAME_LENGTH} characters or fewer.")
-            return
-        st.session_state.visitor_name = clean_name
+        st.session_state.visitor_name = visitor_name.strip()
         st.session_state.name_submitted = True
         st.rerun()
 
