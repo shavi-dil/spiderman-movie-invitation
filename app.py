@@ -54,11 +54,11 @@ def init_session_state() -> None:
     if "last_save_error" not in st.session_state:
       st.session_state.last_save_error = ""
 
-    if "yes_webhook_attempted" not in st.session_state:
-      st.session_state.yes_webhook_attempted = False
+    if "yes_notification_sent" not in st.session_state:
+      st.session_state.yes_notification_sent = False
 
-    if "yes_webhook_sent" not in st.session_state:
-      st.session_state.yes_webhook_sent = False
+    if "yes_notification_attempted" not in st.session_state:
+      st.session_state.yes_notification_attempted = False
 
 
 def inject_base_page_css() -> None:
@@ -310,26 +310,22 @@ def send_yes_email(visitor_name: str) -> bool:
         return False
 
 
-def notify_yes_webhook_once() -> None:
-  """Send a one-time YES webhook event for this browser session."""
-  if st.session_state.yes_webhook_attempted:
-    return
-
-  st.session_state.yes_webhook_attempted = True
+def notify_backend(visitor_name: str, answer: str) -> bool:
+  """Send webhook notification to backend for the submitted answer."""
   payload = {
-    "name": str(st.session_state.visitor_name),
-    "answer": "YES",
+    "name": visitor_name,
+    "answer": answer,
     "timestamp": datetime.now(MELBOURNE_TZ).isoformat(),
   }
 
   try:
     response = requests.post(YES_WEBHOOK_URL, json=payload, timeout=10)
     response.raise_for_status()
-    st.session_state.yes_webhook_sent = True
+    return True
   except Exception as exc:  # pragma: no cover
-    st.session_state.yes_webhook_sent = False
     LOGGER.warning("YES webhook send failed safely. Error type: %s", type(exc).__name__)
     print(f"YES webhook send failed safely: {type(exc).__name__}")
+    return False
 
 
 def log_yes_response_json(visitor_name: str) -> tuple[bool, str]:
@@ -371,7 +367,11 @@ def submit_yes_response(visitor_name: str, *, attempts: int, yes_scale: float) -
   st.session_state.json_logged = logged
   st.session_state.last_save_error = save_error
 
-  notify_yes_webhook_once()
+  if not st.session_state.yes_notification_attempted and not st.session_state.yes_notification_sent:
+    success = notify_backend(st.session_state.visitor_name, "YES")
+    st.session_state.yes_notification_attempted = True
+    if success:
+      st.session_state.yes_notification_sent = True
 
   # Send email once per session only.
   if not st.session_state.email_sent:
@@ -1331,24 +1331,6 @@ def main() -> None:
     height=960,
     scrolling=False,
   )
-
-  if not st.session_state.response_submitted:
-    if st.button("Save Yes ❤️", use_container_width=True, type="primary"):
-      submit_yes_response(
-        st.session_state.visitor_name,
-        attempts=int(st.session_state.no_escape_count),
-        yes_scale=float(st.session_state.yes_scale),
-      )
-      st.rerun()
-
-    st.info("If the animated Yes click does not sync, tap Confirm Yes below.")
-    if st.button("Confirm Yes ❤️", use_container_width=True, type="primary"):
-      submit_yes_response(
-        st.session_state.visitor_name,
-        attempts=int(st.session_state.no_escape_count),
-        yes_scale=float(st.session_state.yes_scale),
-      )
-      st.rerun()
 
   if st.session_state.response_submitted:
     if st.session_state.json_logged:
