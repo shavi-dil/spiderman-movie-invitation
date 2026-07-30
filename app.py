@@ -320,6 +320,24 @@ def clamp_yes_scale(value: float) -> float:
     return max(YES_SCALE_MIN, min(YES_SCALE_MAX, value))
 
 
+def submit_yes_response(visitor_name: str, *, attempts: int, yes_scale: float) -> None:
+  """Persist YES response and send notification once per session."""
+  if st.session_state.response_submitted:
+    return
+
+  st.session_state.no_escape_count = max(st.session_state.no_escape_count, max(0, attempts))
+  st.session_state.yes_scale = max(float(st.session_state.yes_scale), clamp_yes_scale(yes_scale))
+  st.session_state.response_submitted = True
+  st.session_state.submitted_answer = "YES"
+
+  # Keep a temporary local record for each successful YES action.
+  log_yes_response_json(visitor_name)
+
+  # Send email once per session only.
+  if not st.session_state.email_sent:
+    st.session_state.email_sent = send_yes_email(visitor_name)
+
+
 def process_component_event(event_payload: object) -> None:
     """Handle events from the custom HTML component."""
     if not isinstance(event_payload, dict):
@@ -347,21 +365,11 @@ def process_component_event(event_payload: object) -> None:
     if event_type != "yes":
         return
 
-    if st.session_state.response_submitted:
-        return
-
-    st.session_state.no_escape_count = max(st.session_state.no_escape_count, attempts)
-    st.session_state.yes_scale = max(float(st.session_state.yes_scale), yes_scale)
-    st.session_state.response_submitted = True
-    st.session_state.submitted_answer = "YES"
-
-    # Keep a temporary local record for each successful YES action.
-    log_yes_response_json(st.session_state.visitor_name)
-
-    # Send email once per session only.
-    if not st.session_state.email_sent:
-        st.session_state.email_sent = send_yes_email(st.session_state.visitor_name)
-
+    submit_yes_response(
+      st.session_state.visitor_name,
+      attempts=attempts,
+      yes_scale=yes_scale,
+    )
     st.rerun()
 
 
@@ -1273,6 +1281,17 @@ def main() -> None:
     height=960,
     scrolling=False,
   )
+
+  if not st.session_state.response_submitted:
+    st.info("If the animated Yes click does not sync, tap Confirm Yes below.")
+    if st.button("Confirm Yes ❤️", use_container_width=True, type="primary"):
+      submit_yes_response(
+        st.session_state.visitor_name,
+        attempts=int(st.session_state.no_escape_count),
+        yes_scale=float(st.session_state.yes_scale),
+      )
+      st.rerun()
+
   process_component_event(component_value)
 
 
