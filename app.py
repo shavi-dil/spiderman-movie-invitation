@@ -87,6 +87,37 @@ def inject_base_page_css() -> None:
           iframe {
             border: 0 !important;
           }
+          .main-yes-anchor {
+            position: relative;
+            z-index: 90;
+            width: clamp(130px, 26vw, 170px);
+            margin-top: -152px;
+            margin-left: clamp(16px, 2.2vw, 24px);
+            margin-bottom: 88px;
+            pointer-events: auto !important;
+          }
+          .main-yes-anchor div[data-testid="stButton"] {
+            margin: 0 !important;
+          }
+          .main-yes-anchor div[data-testid="stButton"] button {
+            width: 100% !important;
+            min-height: clamp(52px, 8vw, 60px) !important;
+            border-radius: 14px !important;
+            border: 1px solid rgba(255, 255, 255, 0.3) !important;
+            color: #ffffff !important;
+            font-size: clamp(1.02rem, 3.5vw, 1.25rem) !important;
+            font-weight: 900 !important;
+            line-height: 1 !important;
+            background: linear-gradient(130deg, #f14f60, #df3042) !important;
+            box-shadow: 0 10px 24px rgba(223, 48, 66, 0.42) !important;
+          }
+          @media (max-width: 760px) {
+            .main-yes-anchor {
+              margin-top: -168px;
+              margin-left: 12px;
+              margin-bottom: 100px;
+            }
+          }
         </style>
         """,
         unsafe_allow_html=True,
@@ -1335,11 +1366,14 @@ def main() -> None:
 
   yes_clicked = False
   if not st.session_state.response_submitted:
+    st.markdown('<div class="main-yes-anchor">', unsafe_allow_html=True)
     yes_clicked = st.button(
       "Yes ❤️",
       key="main_yes_button",
       use_container_width=True,
+      type="primary",
     )
+    st.markdown('</div>', unsafe_allow_html=True)
 
   if yes_clicked and not st.session_state.response_submitted:
     webhook_success = False
