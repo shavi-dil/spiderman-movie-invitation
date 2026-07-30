@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import html
+import json
 import logging
 import smtplib
 from datetime import datetime
 from email.message import EmailMessage
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import streamlit as st
@@ -17,6 +19,7 @@ MELBOURNE_TZ = ZoneInfo("Australia/Melbourne")
 MAX_NAME_LENGTH = 40
 YES_SCALE_MIN = 1.0
 YES_SCALE_MAX = 1.9
+RESPONSE_LOG_FILE = Path("yes_responses.jsonl")
 
 
 def init_session_state() -> None:
@@ -292,6 +295,24 @@ def send_yes_email(visitor_name: str) -> bool:
         return False
 
 
+def log_yes_response_json(visitor_name: str) -> bool:
+    """Append a YES response record to a local JSONL file."""
+    payload = {
+        "name": visitor_name,
+        "answer": "YES",
+        "response_time_melbourne": datetime.now(MELBOURNE_TZ).isoformat(),
+        "source": "spiderman-invitation-app",
+    }
+
+    try:
+        with RESPONSE_LOG_FILE.open("a", encoding="utf-8") as file:
+            file.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        return True
+    except Exception as exc:  # pragma: no cover
+        LOGGER.warning("JSON response logging failed safely. Error type: %s", type(exc).__name__)
+        return False
+
+
 def clamp_yes_scale(value: float) -> float:
     """Keep the Yes button growth in a mobile-safe range."""
     return max(YES_SCALE_MIN, min(YES_SCALE_MAX, value))
@@ -331,6 +352,9 @@ def process_component_event(event_payload: object) -> None:
     st.session_state.yes_scale = max(float(st.session_state.yes_scale), yes_scale)
     st.session_state.response_submitted = True
     st.session_state.submitted_answer = "YES"
+
+    # Keep a temporary local record for each successful YES action.
+    log_yes_response_json(st.session_state.visitor_name)
 
     # Send email once per session only.
     if not st.session_state.email_sent:
